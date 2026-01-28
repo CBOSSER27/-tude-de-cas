@@ -255,7 +255,7 @@ ggplot(synthese_graph, aes(x = Condition, y = Moyenne, fill = Axe)) +
 On commence par calculer la variation par rapport à YO pour chaque direction, on formate le texte, puis on s'occupe de la mise en forme finale du tableau, en modifiant l'odre des colonnes afin que YO (la donnée de référence) soit la premiere colonne.
 
 ```{r}
-tableau_score <- synthese_graph%>%
+tableau_score_1 <- synthese_graph%>%
   group_by(Axe)%>%
   mutate(
     Valeur_Ref = Moyenne[Condition == "YO"], 
