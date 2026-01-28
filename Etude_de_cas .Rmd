@@ -278,6 +278,12 @@ rm(list = c("tableau_score_1", "synthese_graph"))
 
 ##### Nuage de points et ellipses
 
+Nous allons utiliser les variables suivante :
+
+-   Aire_YO, Aire_YF, Aire_MO
+
+-   APRoM_YO, APRoM_YF, APRoM_MO, MLRoM_YO, MLRoM_YF, MLRoM_MO
+
 #### Q3.1 Une fois ces deux groupes constitués, quel test proposez-vous pour comparer les deux groupes d’enfants ? 
 
 Creation des groupes d'ages :
