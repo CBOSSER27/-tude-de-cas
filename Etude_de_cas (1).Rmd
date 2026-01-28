@@ -22,11 +22,11 @@ Voici la manière dont nous avons generees les boxplots utilisés pour illustrer
 #creation du data-frame pour l'exemple
 
 performance <- DataPosturo %>%
-  select(Sujets,
-         APRoM_YO, APRoM_YF, APRoM_MO, 
-         MLRoM_YO, MLRoM_YF, MLRoM_MO)%>%
-  pivot_longer(c("APRoM_YO", "APRoM_YF", "APRoM_MO", 
-         "MLRoM_YO", "MLRoM_YF", "MLRoM_MO"), names_to = "YO_YF_MO", values_to = "values_YO_YF_MO")
+  select(Sujets, starts_with("APRoM"), starts_with("MLRoM")) %>%
+  pivot_longer(
+    cols = -Sujets,              
+    names_to = "YO_YF_MO", 
+    values_to = "values_YO_YF_MO")
 
 
 #Creation des boxplot pour l'exemple
@@ -135,9 +135,9 @@ count_extremum_df(data_clean)
 # summary(DataPosturo)
 ```
 
-On obtiens ainsi *data_clean*, le nouveau tableau avec les données "nettoyer", c'est-à-dire que nous avons *traitées les valeurs aberrantes par "winsorisation". Les observations inférieures à la borne basse (Q1 − 1,5×IQR) ont été remplacées par cette borne, et celles supérieures à la borne haute (Q3 + 1,5×IQR) ont été remplacées par la borne correspondante. Cette approche permet de limiter l'influence des valeurs extrêmes tout en conservant l'ensemble des données. Pour prendre cette décision, nous avons d'abord testé le remplacement des valeurs aberrantes par la moyenne, puis par la médiane. Cependant, avec ces deux méthodes, certaines valeurs aberrantes subsistaient encore dans le dataset.*
+On obtiens ainsi *data_clean*, le nouveau tableau avec les données "nettoyer", c’est-à-dire que nous avons *traitées les valeurs aberrantes par "winsorisation". Les observations inférieures à la borne basse (Q1 − 1,5×IQR) ont été remplacées par cette borne, et celles supérieures à la borne haute (Q3 + 1,5×IQR) ont été remplacées par la borne correspondante. Cette approche permet de limiter l’influence des valeurs extrêmes tout en conservant l’ensemble des données. Pour prendre cette décision, nous avons d’abord testé le remplacement des valeurs aberrantes par la moyenne, puis par la médiane. Cependant, avec ces deux méthodes, certaines valeurs aberrantes subsistaient encore dans le dataset.*
 
-#### Q2.3 Proposez des tableaux et graphiques pour synthétiser ces données descriptives. N'oubliez pas de bien expliquer et justifier les choix que vous faites.
+#### Q2.3 Proposez des tableaux et graphiques pour synthétiser ces données descriptives. N’oubliez pas de bien expliquer et justifier les choix que vous faites.
 
 Voici un data-base que l'on utilisera dans nos exemples :
 
@@ -155,7 +155,7 @@ Passons maintenant a la création du tableau :
 ```{r}
 library(tidyverse)
 
-tableau_synthese <- perf_clean %>%
+tableau_synthese <- data_clean %>%
   select(-Sujets) %>%                         # On exclut la colonne Sujets qui                                                  ne se prête pas aux calculs
   pivot_longer(cols = everything(), names_to = "Variable", values_to = "Valeur") %>%
   group_by(Variable) %>%
@@ -191,3 +191,52 @@ ggplot(perf_long, aes(x = Condition, y = Valeur, fill = Axe)) +
        x = "Conditions (YO, YF, MO)",
        y = "Amplitude de mouvement (mm)")
 ```
+
+#### **Q2.4 Vous devez présenter les résultats des variables dites « classiques » aux parents des enfants. Quels graphiques/tableaux proposez-vous ?**
+
+##### L'histogramme
+
+On commence par sélectionner les colonnes, on passe en format long, et on sépare les noms :
+
+```{r}
+synthese_graph <- data_clean %>%
+  select(starts_with("APRoM") | starts_with("MLRoM")) %>%  
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Valeur") %>%
+  separate(Variable, into = c("Axe", "Condition"), sep = "_") %>% 
+  mutate(Axe = str_replace(Axe, "RoM", "")) %>%
+  group_by(Condition, Axe) %>%
+  summarise(
+    Moyenne = mean(Valeur, na.rm = TRUE),
+    .groups = 'drop'
+  )
+```
+
+On s'assure que l'ordre soit bien YO -\> YF -\> MO et pas alphabétique :
+
+```{r}
+synthese_graph$Condition <- factor(synthese_graph$Condition, levels = c("YO", "YF", "MO"))
+```
+
+Création du graphique :
+
+```{r}
+ggplot(synthese_graph, aes(x = Condition, y = Moyenne, fill = Axe)) +
+  
+  # Création des barres (stat="identity" car on donne déjà la moyenne)
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) +
+  
+  
+  # Choix des couleurs et titres
+  scale_fill_manual(values = c("AP" = "#F2994EFF", "ML" = "#B81840FF"), 
+                    labels = c("Avant-Arrière (AP)", "Gauche-Droite (ML)")) +
+  
+  labs(title = "Stabilité posturale de l'enfant",
+       subtitle = "Comparaison des oscillations selon la direction et la difficulté",
+       x = "Conditions (Facile -> Difficile)",
+       y = "Instabilité",
+       fill = "Direction du mouvement") 
+```
+
+##### Le tableau de "Score de Stabilité"
+
+On commence par calculer la variation par rapport à YO pour chaque direction, on formate le texte, puis on s'occupe de la mise en forme finale du tableau, en modifiant l'odre des colonnes afin que YO (la donnée de référence) soit la premiere colonne.
