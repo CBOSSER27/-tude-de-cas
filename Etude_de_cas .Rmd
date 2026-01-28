@@ -270,6 +270,14 @@ tableau_score_1 <- synthese_graph%>%
   pivot_wider(names_from = Condition, values_from = Score)
 ```
 
+Nettoyage de l'environnement :
+
+```{r}
+rm(list = c("tableau_score_1", "synthese_graph"))
+```
+
+##### Nuage de points et ellipses
+
 #### Q3.1 Une fois ces deux groupes constitués, quel test proposez-vous pour comparer les deux groupes d’enfants ? 
 
 Creation des groupes d'ages :
@@ -282,4 +290,44 @@ data_age <- data_clean %>%
 
 # Vérification rapide du nombre d'enfants par groupe
 table(data_age$Groupe)
+```
+
+Fonction qui choisit le bon test automatiquement :
+
+Dans la partie "choix et application du test", on procède ainsi : si les deux groupes suivent une loi normale (selon le test de Shapiro-Wilk), alors on peut utiliser un test de Student. Sinon, on utilise le test de Mann-Whitney.
+
+```{r}
+choix_test_stats <- function(valeur, groupe) {
+  g1 <- valeur[groupe == "6-8 ans"]
+  g2 <- valeur[groupe == "9-11 ans"]
+  
+  #Test de Normalité (Shapiro-Wilk)
+  norm_g1 <- shapiro.test(g1)$p.value > 0.05
+  norm_g2 <- shapiro.test(g2)$p.value > 0.05
+  
+  #Choix et Application du Test
+  if (norm_g1 & norm_g2) {         
+    res <- t.test(valeur ~ groupe, var.equal = TRUE)
+    type_test <- "Student (T-test)"
+  } else {                        
+    res <- wilcox.test(valeur ~ groupe)
+    type_test <- "Mann-Whitney"
+  }
+  
+  return(data.frame(
+    Test_Utilise = type_test,
+    P_Value = round(res$p.value, 4),
+    Significatif = if_else(res$p.value < 0.05, "OUI", "NON")
+  ))
+}
+```
+
+On utilise maintenant la fonction sur nos données :
+
+```{r}
+resultats_tests <- data_age %>%
+  select(Groupe, starts_with("APRoM"), starts_with("MLRoM")) %>%
+  pivot_longer(cols = -Groupe, names_to = "Variable", values_to = "Valeur") %>%
+  group_by(Variable) %>%
+  do(choix_test_stats(.$Valeur, .$Groupe))
 ```
