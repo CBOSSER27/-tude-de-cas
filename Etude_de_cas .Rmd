@@ -1,0 +1,217 @@
+## Analyse de la posture chez des enfants âgés de 6 à 12ans, neurotypiques et atteints de trouble du spectre de l'autisme
+
+### Première partie : effet de l'âge et d'autres paramètres sur la posture
+
+#### Q2.2 Assurez-vous assurer qu'il n'y a pas d'anomalies dans les données recueillies. Expliquez bien comment vous procédez pour vérifier les données et, si nécessaire, ce que vous avez proposé pour les « corriger ». 
+
+Pour commencer, installation des bibliotheques que nous utiliserons par la suite :
+
+```{r}
+#installation des bibliothèques
+
+library(tidyverse)
+library(ggplot2)
+library(readxl)
+DataPosturo <- read_excel("DataPosturo.xlsx")
+summary(DataPosturo)
+```
+
+Voici la manière dont nous avons generees les boxplots utilisés pour illustrer notre methode sur un petit echantillon des données que nous avons a notre disposition :
+
+```{r}
+#creation du data-frame pour l'exemple
+
+
+performance <- DataPosturo %>%
+  select(Sujets, starts_with("APRoM"), starts_with("MLRoM")) %>%
+    pivot_longer(
+      cols = -Sujets,              
+      names_to = "YO_YF_MO", 
+      values_to = "values_YO_YF_MO")
+
+
+#Creation des boxplot pour l'exemple
+
+ggplot(performance, aes(x= YO_YF_MO, y = values_YO_YF_MO))+
+  geom_boxplot()+
+  #facet_wrap(~ YO_YF_MO)+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+#Verification coherence des données : 
+summary(performance)
+```
+
+Voici maintenant la methode plus generale, que nous avons utilisees sur le restes des données :
+
+```{r}
+#fonction permettant de trouver les valeurs extremes dans : 
+
+#une colonne
+find_extremum <- function(data, col) {
+  
+  x <- data[[col]]
+  
+  Q1 <- quantile(x, 0.25, na.rm = TRUE)
+  Q3 <- quantile(x, 0.75, na.rm = TRUE)
+  
+  maxi <- min(max(x, na.rm = TRUE), Q3 + 1.5 * (Q3 - Q1))
+  mini <- max(min(x, na.rm = TRUE), Q1 - 1.5 * (Q3 - Q1))
+  
+  extremum <- x[x < mini | x > maxi]
+  
+  if (length(extremum) == 0) {              #pour que ce soit plus lisible
+    extremum <- NA
+  }
+  
+  list(
+    variable = col,
+    extremum = extremum,
+    n_extremum = sum(!is.na(extremum)),
+    mini = mini,
+    maxi = maxi
+  )
+}
+
+#un data-frame
+find_extremum_df <- function(data) {
+  
+  num_cols <- sapply(data, is.numeric)
+  
+  extremum_list <- lapply(
+    names(data)[num_cols],                    #permet d'avoir le nom des                                                           colonnes numeriques
+    function(col) find_extremum(data, col)
+  )
+  
+  names(extremum_list) <- names(data)[num_cols]
+  
+  return(extremum_list)
+}
+```
+
+On a decider de le faire dans deux fonctions differentes, bien qu'on aurais pu le faire dans une meme fonction car on trouvais ça plus lisible.
+
+Laissons maintenant place a notre fonction *count_extremum_df* qui permet de calculer le nombre de valeur aberrante d'un data-frame donné en utilisant les fonctions definie ci-dessus.
+
+```{r}
+count_extremum_df <- function(data) {
+  extremum_list <- find_extremum_df(data)
+  sum(sapply(extremum_list, function(x) x$n_extremum))
+}
+
+count_extremum_df(DataPosturo)              #retourne le nombre de valeurs                                                       aberrantes totales, ici : 83
+
+```
+
+Maintenant que l'on sais comment trouver les valeurs aberrantes, on peut les remplacer par des valeurs inexistante via la fonction suivante :
+
+```{r}
+remove_extremum_df <- function(data) {
+  
+  data_clean <- data
+  extremum_list <- find_extremum_df(data)
+  
+  for (col in names(extremum_list)) {
+    
+    mini <- extremum_list[[col]]$mini
+    maxi <- extremum_list[[col]]$maxi
+    
+    x <- data[[col]]
+    
+    # Remplacement par les bornes min/max acceptables (winsorisation)
+    x[x > maxi] <- maxi
+    x[x < mini] <- mini
+    
+    data_clean[[col]] <- x
+
+    
+  }
+  
+  return(data_clean)
+}
+
+data_clean <- remove_extremum_df(DataPosturo)
+count_extremum_df(data_clean)
+
+# summary(data_clean)
+# summary(DataPosturo)
+```
+
+On obtiens ainsi *data_clean*, le nouveau tableau avec les données "nettoyer", c'est-à-dire que nous avons *traitées les valeurs aberrantes par "winsorisation". Les observations inférieures à la borne basse (Q1 − 1,5×IQR) ont été remplacées par cette borne, et celles supérieures à la borne haute (Q3 + 1,5×IQR) ont été remplacées par la borne correspondante. Cette approche permet de limiter l'influence des valeurs extrêmes tout en conservant l'ensemble des données. Pour prendre cette décision, nous avons d'abord testé le remplacement des valeurs aberrantes par la moyenne, puis par la médiane. Cependant, avec ces deux méthodes, certaines valeurs aberrantes subsistaient encore dans le dataset.*
+
+#### Q2.3 Proposez des tableaux et graphiques pour synthétiser ces données descriptives. N'oubliez pas de bien expliquer et justifier les choix que vous faites.
+
+Voici un data-base que l'on utilisera dans nos exemples :
+
+```{r}
+perf <- DataPosturo %>%
+  select(Sujets,
+         APRoM_YO, APRoM_YF, APRoM_MO, 
+         MLRoM_YO, MLRoM_YF, MLRoM_MO)
+
+perf_clean <- remove_extremum_df(perf) #on l'utilisera plus tard pour                                                       des exemples
+```
+
+Passons maintenant a la création du tableau :
+
+```{r}
+library(tidyverse)
+
+tableau_synthese <- perf_clean %>%
+  select(-Sujets) %>%                         # On exclut la colonne Sujets qui                                                  ne se prête pas aux calculs
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Valeur") %>%
+  group_by(Variable) %>%
+  summarise(
+    N_Valide = sum(!is.na(Valeur)), # Compte les données non-NA
+    Moyenne = round(mean(Valeur, na.rm = TRUE), 2),
+    Ecart_Type = round(sd(Valeur, na.rm = TRUE), 2),
+    Mediane = round(median(Valeur, na.rm = TRUE), 2),
+    Minimum = round(min(Valeur, na.rm = TRUE), 2),
+    Maximum = round(max(Valeur, na.rm = TRUE), 2)
+  )
+
+print(tableau_synthese)
+```
+
+(Pour generer le tableau de l'exemple, il suffit de modifier "*data_clean*" par "*perf_clean*")
+
+Et maintenant, pour les boxplots :
+
+```{r}
+perf_long <- perf_clean %>%
+  pivot_longer(cols = -Sujets, 
+               names_to = "Variable", 
+               values_to = "Valeur") %>%
+  separate(Variable, into = c("Axe", "Condition"), sep = "_")
+
+
+ggplot(perf_long, aes(x = Condition, y = Valeur, fill = Axe)) +
+  geom_boxplot() +
+  facet_wrap(~ Axe, scales = "free_y") + # Un graphique pour AP, un pour ML
+  labs(title = "Synthèse des balancements posturaux (AP vs ML)",
+       subtitle = "Comparaison selon les conditions sensorielles (après nettoyage)",
+       x = "Conditions (YO, YF, MO)",
+       y = "Amplitude de mouvement (mm)")
+```
+
+#### **Q2.4 Vous devez présenter les résultats des variables dites « classiques » aux parents des enfants. Quels graphiques/tableaux proposez-vous ?**
+
+##### L'histogramme
+
+On commence par sélectionner les colonnes, on passe en format long, et on sépare les noms :
+
+```{r} synthese_graph <- data_clean %>%   select(starts_with("APRoM") | starts_with("MLRoM")) %>%     pivot_longer(cols = everything(), names_to = "Variable", values_to = "Valeur") %>%   separate(Variable, into = c("Axe", "Condition"), sep = "_") %>%    mutate(Axe = str_replace(Axe, "RoM", "")) %>%   group_by(Condition, Axe) %>%   summarise(     Moyenne = mean(Valeur, na.rm = TRUE),     .groups = 'drop'   )}
+```
+
+On s'assure que l'ordre soit bien YO -\> YF -\> MO et pas alphabétique :
+
+```{r} synthese_graph$Condition <- factor(synthese_graph$Condition, levels = c("YO", "YF", "MO"))}
+```
+
+Création du graphique :
+
+```{r} ggplot(synthese_graph, aes(x = Condition, y = Moyenne, fill = Axe)) +      # Création des barres (stat="identity" car on donne déjà la moyenne)   geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) +         # Choix des couleurs et titres   scale_fill_manual(values = c("AP" = "#F2994EFF", "ML" = "#B81840FF"),                      labels = c("Avant-Arrière (AP)", "Gauche-Droite (ML)")) +      labs(title = "Stabilité posturale de l'enfant",        subtitle = "Comparaison des oscillations selon la direction et la difficulté",        x = "Conditions (Facile -> Difficile)",        y = "Instabilité",        fill = "Direction du mouvement")}
+```
+
+##### Le tableau de "Score de Stabilité"
+
+On commence par calculer la variation par rapport à YO pour chaque direction, on formate le texte, puis on s'occupe de la mise en forme finale du tableau, en modifiant l'odre des colonnes afin que YO (la donnée de référence) soit la premiere colonne.
