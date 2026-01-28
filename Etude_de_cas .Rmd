@@ -199,17 +199,43 @@ ggplot(perf_long, aes(x = Condition, y = Valeur, fill = Axe)) +
 
 On commence par sélectionner les colonnes, on passe en format long, et on sépare les noms :
 
-```{r} synthese_graph <- data_clean %>%   select(starts_with("APRoM") | starts_with("MLRoM")) %>%     pivot_longer(cols = everything(), names_to = "Variable", values_to = "Valeur") %>%   separate(Variable, into = c("Axe", "Condition"), sep = "_") %>%    mutate(Axe = str_replace(Axe, "RoM", "")) %>%   group_by(Condition, Axe) %>%   summarise(     Moyenne = mean(Valeur, na.rm = TRUE),     .groups = 'drop'   )}
+```{r}
+synthese_graph <- data_clean %>%
+  select(starts_with("APRoM") | starts_with("MLRoM")) %>%  
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Valeur") %>%
+  separate(Variable, into = c("Axe", "Condition"), sep = "_") %>% 
+  mutate(Axe = str_replace(Axe, "RoM", "")) %>%
+  group_by(Condition, Axe) %>%
+  summarise(
+    Moyenne = mean(Valeur, na.rm = TRUE),
+    .groups = 'drop'
+  )
 ```
 
 On s'assure que l'ordre soit bien YO -\> YF -\> MO et pas alphabétique :
 
-```{r} synthese_graph$Condition <- factor(synthese_graph$Condition, levels = c("YO", "YF", "MO"))}
+```{r}
+synthese_graph$Condition <- factor(synthese_graph$Condition, levels = c("YO", "YF", "MO"))
 ```
 
 Création du graphique :
 
-```{r} ggplot(synthese_graph, aes(x = Condition, y = Moyenne, fill = Axe)) +      # Création des barres (stat="identity" car on donne déjà la moyenne)   geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) +         # Choix des couleurs et titres   scale_fill_manual(values = c("AP" = "#F2994EFF", "ML" = "#B81840FF"),                      labels = c("Avant-Arrière (AP)", "Gauche-Droite (ML)")) +      labs(title = "Stabilité posturale de l'enfant",        subtitle = "Comparaison des oscillations selon la direction et la difficulté",        x = "Conditions (Facile -> Difficile)",        y = "Instabilité",        fill = "Direction du mouvement")}
+```{r}
+ggplot(synthese_graph, aes(x = Condition, y = Moyenne, fill = Axe)) +
+  
+  # Création des barres (stat="identity" car on donne déjà la moyenne)
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) +
+  
+  
+  # Choix des couleurs et titres
+  scale_fill_manual(values = c("AP" = "#F2994EFF", "ML" = "#B81840FF"), 
+                    labels = c("Avant-Arrière (AP)", "Gauche-Droite (ML)")) +
+  
+  labs(title = "Stabilité posturale de l'enfant",
+       subtitle = "Comparaison des oscillations selon la direction et la difficulté",
+       x = "Conditions (Facile -> Difficile)",
+       y = "Instabilité",
+       fill = "Direction du mouvement") 
 ```
 
 ##### Le tableau de "Score de Stabilité"
