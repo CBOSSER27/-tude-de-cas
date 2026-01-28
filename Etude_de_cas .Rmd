@@ -270,12 +270,6 @@ tableau_score_1 <- synthese_graph%>%
   pivot_wider(names_from = Condition, values_from = Score)
 ```
 
-Nettoyage de l'environnement :
-
-```{r}
-rm(list = c("tableau_score_1", "synthese_graph"))
-```
-
 ##### Nuage de points et ellipses
 
 Nous allons utiliser les variables suivante :
@@ -283,6 +277,16 @@ Nous allons utiliser les variables suivante :
 -   Aire_YO, Aire_YF, Aire_MO
 
 -   APRoM_YO, APRoM_YF, APRoM_MO, MLRoM_YO, MLRoM_YF, MLRoM_MO
+
+```{r}
+
+```
+
+Nettoyage de l'environnement :
+
+```{r}
+rm(list = c("tableau_score_1", "synthese_graph"))
+```
 
 #### Q3.1 Une fois ces deux groupes constitués, quel test proposez-vous pour comparer les deux groupes d’enfants ? 
 
@@ -336,4 +340,10 @@ resultats_tests <- data_age %>%
   pivot_longer(cols = -Groupe, names_to = "Variable", values_to = "Valeur") %>%
   group_by(Variable) %>%
   do(choix_test_stats(.$Valeur, .$Groupe))
+```
+
+Nettoyage de l'environnement :
+
+```{r}
+rm(resultats_tests)
 ```
