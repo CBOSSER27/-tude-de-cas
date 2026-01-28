@@ -138,6 +138,12 @@ count_extremum_df(data_clean)
 
 On obtiens ainsi *data_clean*, le nouveau tableau avec les données "nettoyer", c'est-à-dire que nous avons *traitées les valeurs aberrantes par "winsorisation". Les observations inférieures à la borne basse (Q1 − 1,5×IQR) ont été remplacées par cette borne, et celles supérieures à la borne haute (Q3 + 1,5×IQR) ont été remplacées par la borne correspondante. Cette approche permet de limiter l'influence des valeurs extrêmes tout en conservant l'ensemble des données. Pour prendre cette décision, nous avons d'abord testé le remplacement des valeurs aberrantes par la moyenne, puis par la médiane. Cependant, avec ces deux méthodes, certaines valeurs aberrantes subsistaient encore dans le dataset.*
 
+Nettoyage de l'environnement :
+
+```{r}
+rm(performance)
+```
+
 #### Q2.3 Proposez des tableaux et graphiques pour synthétiser ces données descriptives. N'oubliez pas de bien expliquer et justifier les choix que vous faites.
 
 Voici un data-base que l'on utilisera dans nos exemples :
@@ -191,6 +197,12 @@ ggplot(perf_long, aes(x = Condition, y = Valeur, fill = Axe)) +
        subtitle = "Comparaison selon les conditions sensorielles (après nettoyage)",
        x = "Conditions (YO, YF, MO)",
        y = "Amplitude de mouvement (mm)")
+```
+
+Nettoyage de l'environnement :
+
+```{r}
+rm(list = c("perf_long", "tableau_synthese", "perf"))
 ```
 
 #### **Q2.4 Vous devez présenter les résultats des variables dites « classiques » aux parents des enfants. Quels graphiques/tableaux proposez-vous ?**
