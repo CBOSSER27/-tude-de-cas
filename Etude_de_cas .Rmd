@@ -253,3 +253,33 @@ ggplot(synthese_graph, aes(x = Condition, y = Moyenne, fill = Axe)) +
 ##### Le tableau de "Score de Stabilité"
 
 On commence par calculer la variation par rapport à YO pour chaque direction, on formate le texte, puis on s'occupe de la mise en forme finale du tableau, en modifiant l'odre des colonnes afin que YO (la donnée de référence) soit la premiere colonne.
+
+```{r}
+tableau_score <- synthese_graph%>%
+  group_by(Axe)%>%
+  mutate(
+    Valeur_Ref = Moyenne[Condition == "YO"], 
+    Variation = (Moyenne - Valeur_Ref) / Valeur_Ref,
+    
+    Score = case_when(
+      Condition == "YO" ~ "Référence",
+      TRUE ~ sprintf("%+.0f%%", Variation * 100)
+    )
+  ) %>%
+  select(-c("Variation", "Valeur_Ref", "Moyenne"))%>%
+  pivot_wider(names_from = Condition, values_from = Score)
+```
+
+#### Q3.1 Une fois ces deux groupes constitués, quel test proposez-vous pour comparer les deux groupes d’enfants ? 
+
+Creation des groupes d'ages :
+
+```{r}
+data_age <- data_clean %>%
+  mutate(Groupe = case_when(
+    Age >= 6 & Age < 9 ~ "6-8 ans",
+    Age >= 9 & Age < 12 ~ "9-11 ans"))
+
+# Vérification rapide du nombre d'enfants par groupe
+table(data_age$Groupe)
+```
