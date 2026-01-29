@@ -212,43 +212,22 @@ rm(list = c("perf_long", "tableau_synthese", "perf"))
 On commence par sélectionner les colonnes, on passe en format long, et on sépare les noms :
 
 ```{r}
-
-tableau_mean <- data_clean %>%
-  select(Vm_YO, Vm_YF, Vm_MO, Aire_YO, Aire_YF, Aire_MO,theta_YO,theta_YF,theta_MO,CoPexc_YO,CoPexc_YF, CoPexc_MO, APRoM_YO, APRoM_YF,APRoM_MO, MLRoM_YO,MLRoM_YF, MLRoM_MO) %>%
-  pivot_longer(cols = c("Vm_YO", "Vm_YF", "Vm_MO", "Aire_YO", "Aire_YF", "Aire_MO","theta_YO","theta_YF","theta_MO","CoPexc_YO","CoPexc_YF", "CoPexc_MO", "APRoM_YO", "APRoM_YF","APRoM_MO", "MLRoM_YO","MLRoM_YF", "MLRoM_MO"),
-               names_to = "Variable",
-               values_to = "counts" )
-
-tableau_mean <- tableau_mean %>%
-  group_by(Variable) %>%
-  summarise(mean_var = mean(counts)) %>%
-  separate(Variable, into = c("Axe", "Condition"), sep = "_") %>%
-  group_by(Axe) %>%
-  pivot_wider(names_from = Condition, values_from = mean_var)
+synthese_graph <- data_clean %>%
+  select(starts_with("APRoM") | starts_with("MLRoM")) %>%  
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Valeur") %>%
+  separate(Variable, into = c("Axe", "Condition"), sep = "_") %>% 
+  mutate(Axe = str_replace(Axe, "RoM", "")) %>%
+  group_by(Condition, Axe) %>%
+  summarise(
+    Moyenne = mean(Valeur, na.rm = TRUE),
+    .groups = 'drop'
+  )
 ```
 
 On s'assure que l'ordre soit bien YO -\> YF -\> MO et pas alphabétique :
 
 ```{r}
 synthese_graph$Condition <- factor(synthese_graph$Condition, levels = c("YO", "YF", "MO"))
-```
-
-```{r}
-  
-tableau_score_1 <- tableau_mean%>%
-  mutate(
-    MO = (MO - YO) / YO,
-    YF = (YF - YO) / YO,
-
-    MO = case_when(
-      TRUE ~ sprintf("%+.0f%%", MO * 100)),
-    YF = case_when(
-      TRUE ~ sprintf("%+.0f%%", YF * 100),
-    ),
-    YO = "Référence"
-  )
-
-
 ```
 
 Création du graphique :
@@ -291,6 +270,24 @@ tableau_score_1 <- synthese_graph%>%
   pivot_wider(names_from = Condition, values_from = Score)
 ```
 
+##### Nuage de points et ellipses
+
+Nous allons utiliser les variables suivante :
+
+-   Aire_YO, Aire_YF, Aire_MO
+
+-   APRoM_YO, APRoM_YF, APRoM_MO, MLRoM_YO, MLRoM_YF, MLRoM_MO
+
+```{r}
+
+```
+
+Nettoyage de l'environnement :
+
+```{r}
+rm(list = c("tableau_score_1", "synthese_graph"))
+```
+
 #### Q3.1 Une fois ces deux groupes constitués, quel test proposez-vous pour comparer les deux groupes d’enfants ? 
 
 Creation des groupes d'ages :
@@ -303,4 +300,123 @@ data_age <- data_clean %>%
 
 # Vérification rapide du nombre d'enfants par groupe
 table(data_age$Groupe)
+```
+
+Fonction qui choisit le bon test automatiquement :
+
+Dans la partie "choix et application du test", on procède ainsi : si les deux groupes suivent une loi normale (selon le test de Shapiro-Wilk), alors on peut utiliser un test de Student. Sinon, on utilise le test de Mann-Whitney.
+
+```{r}
+choix_test_stats <- function(valeur, groupe) {
+  g1 <- valeur[groupe == "6-8 ans"]
+  g2 <- valeur[groupe == "9-11 ans"]
+  
+  #Test de Normalité (Shapiro-Wilk)
+  norm_g1 <- shapiro.test(g1)$p.value > 0.05
+  norm_g2 <- shapiro.test(g2)$p.value > 0.05
+  
+  #Choix et Application du Test
+  if (norm_g1 & norm_g2) {         
+    res <- t.test(valeur ~ groupe, var.equal = TRUE)
+    type_test <- "Student (T-test)"
+  } else {                        
+    res <- wilcox.test(valeur ~ groupe)
+    type_test <- "Mann-Whitney"
+  }
+  
+  return(data.frame(
+    Test_Utilise = type_test,
+    P_Value = round(res$p.value, 4),
+    Significatif = if_else(res$p.value < 0.05, "OUI", "NON")
+  ))
+}
+```
+
+On utilise maintenant la fonction sur nos données :
+
+```{r}
+resultats_tests <- data_age %>%
+  select(Groupe, starts_with("APRoM"), starts_with("MLRoM")) %>%
+  pivot_longer(cols = -Groupe, names_to = "Variable", values_to = "Valeur") %>%
+  group_by(Variable) %>%
+  do(choix_test_stats(.$Valeur, .$Groupe))
+```
+
+Nettoyage de l'environnement :
+
+```{r}
+rm(resultats_tests)
+```
+
+#### Q3.2 Une fois ces trois groupes constitués, quel test proposez-vous pour comparer les deux groupes d’enfants ? Vérifiez bien que vous pouvez appliquer ce test à vos données. Appliquez le test à vos données et présentez les résultats (tableaux et graphiques).  
+
+Pour commencer, créons les groupes :
+
+```{r}
+data_3_groupes <- data_clean %>%
+  mutate(Groupe3 = case_when(
+    Age >= 6 & Age < 8 ~ "6-7 ans",
+    Age >= 8 & Age < 10 ~ "8-9 ans",
+    Age >= 10 & Age < 12 ~ "10-11 ans"
+  )) %>%
+  filter(!is.na(Groupe3))
+```
+
+Nous avons aussi créer la fonction *test_multi_groupes* qui commence par vérifier la normalité de chaque sous groupe (variable *shapiro_pass = TRUE* si le groupe est normal), puis qui applique le test qui convient (il suffit qu'un seul groupe ne soit pas normal pour faire le test de Kruskal-Wallis).
+
+Cette fonction doit retourner un data-frame avec le nom du test utilisé, la p_value et un booleen indiquant si le test a été significatif ou non.
+
+```{r}
+test_multi_groupes <- function(valeur, groupe) {
+  
+  shapiro_pass <- TRUE
+  for(g in unique(groupe)) {
+    sub <- valeur[groupe == g]
+    if(length(sub) > 3) {     # Shapiro nécessite min 3 données
+      if(shapiro.test(sub)$p.value < 0.05) shapiro_pass <- FALSE 
+    }
+  }
+  
+  # Application du test
+  if(shapiro_pass) {                                   
+    res <- aov(valeur ~ groupe)
+    p_val <- summary(res)[[1]][["Pr(>F)"]][1]
+    test_nom <- "ANOVA"
+  } else {                                               
+    res <- kruskal.test(valeur ~ groupe)
+    p_val <- res$p.value
+    test_nom <- "Kruskal-Wallis"
+  }
+  
+  return(data.frame(
+    Test = test_nom,
+    P_Value = round(p_val, 4),
+    Significatif = if_else(p_val < 0.05, "OUI", "NON")
+  ))
+}
+```
+
+Exécution sur toutes les variables et affichage (tableau puis boxplot) :
+
+```{r}
+resultats_3g <- data_3_groupes %>%
+  select(Groupe3, starts_with("APRoM"), starts_with("MLRoM")) %>%
+  pivot_longer(-Groupe3, names_to = "Variable", values_to = "Valeur") %>%
+  group_by(Variable) %>%
+  do(test_multi_groupes(.$Valeur, .$Groupe3))
+```
+
+```{r}
+data_3_groupes$Groupe3 <- factor(data_3_groupes$Groupe3, 
+                                 levels = c("6-7 ans", "8-9 ans", "10-11 ans"))
+
+ggplot(data_3_groupes, aes(x = Groupe3, y = MLRoM_MO, fill = Groupe3)) +
+  geom_boxplot() +
+  scale_fill_manual(values = c("6-7 ans" = "#DD708EFF", 
+                               "8-9 ans" = "#F2994EFF",   
+                               "10-11 ans" = "#B81840FF")) +
+  labs(title = "Comparaison de la stabilité selon 3 groupes d'âge",
+       subtitle = "Condition : Mousse - Axe Médio-Latéral",
+       y = "Amplitude",
+       x = "Groupe d'âge") 
 ```
