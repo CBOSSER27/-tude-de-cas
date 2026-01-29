@@ -302,14 +302,61 @@ Nous allons utiliser les variables suivante :
 
 -   APRoM_YO, APRoM_YF, APRoM_MO, MLRoM_YO, MLRoM_YF, MLRoM_MO
 
-```{r}
+Commencons par préparer les données pour le nuage de points (on a besoin d'avoir APRoM et MLRoM comme deux colonnes distinctes)
 
+```{r}
+data_scatter <- data_clean %>%
+  select(Sujets, starts_with("APRoM"), starts_with("MLRoM"), starts_with("Vm"), starts_with("Aire")) %>%
+  
+  pivot_longer(cols = -Sujets, 
+               names_to = c("Variable", "Condition"), 
+               names_sep = "_", 
+               values_to = "Valeur") %>%
+  
+  pivot_wider(names_from = Variable, values_from = "Valeur")
+```
+
+Création du graphique (nuage de points + ellipse):
+
+-   On force l'ordre YO -\> YF -\> MO pour la légende
+
+-   On fixe l'origine à 0 pour que ce soit physiquement logique
+
+```{r}
+ggplot(data_scatter, aes(x = MLRoM, y = APRoM, color = Condition, fill = Condition)) +
+  stat_ellipse(geom = "polygon", alpha = 0.2, level = 0.95) + 
+  geom_point(size = 2, alpha = 0.8) +
+  
+  scale_color_manual(values = c("YO"="#F2994EFF", "YF"="#76669BFF", "MO"="#DD708EFF"),
+                     breaks = c("YO", "YF", "MO")) +
+  scale_fill_manual(values = c("YO"="#F2994EFF", "YF"="#626496FF", "MO"="#DD708EFF"),
+                    breaks = c("YO", "YF", "MO")) +
+  
+  labs(title = "Profil de stabilité : Amplitude Avant-Arrière vs Gauche-Droite",
+       subtitle = "Chaque point est un enfant. Les ellipses regroupent 95% du groupe.",
+       x = "Amplitude Médio-Latérale (ML, mm)",
+       y = "Amplitude Antéro-Postérieure (AP, mm)") +
+  
+  expand_limits(x = 0, y = 0)
+```
+
+```{r}
+ggplot(data_scatter, aes(x = Aire, y = Vm, color = Condition, fill = Condition)) +
+  stat_ellipse(geom = "polygon", alpha = 0.2, level = 0.95) + 
+  geom_point(size = 2, alpha = 0.8) +
+  
+  scale_color_manual(values = c("YO"="#F2994EFF", "YF"="#76669BFF", "MO"="#DD708EFF"),
+                     breaks = c("YO", "YF", "MO")) +
+  scale_fill_manual(values = c("YO"="#F2994EFF", "YF"="#626496FF", "MO"="#DD708EFF"),
+                    breaks = c("YO", "YF", "MO")) +
+  
+  expand_limits(x = 0, y = 0)
 ```
 
 Nettoyage de l'environnement :
 
 ```{r}
-rm(list = c("tableau_score_1", "synthese_graph"))
+rm(list = c("tableau_score_1", "synthese_graph", "data_scatter"))
 ```
 
 #### Q3.1 Une fois ces deux groupes constitués, quel test proposez-vous pour comparer les deux groupes d’enfants ? 
@@ -443,4 +490,10 @@ ggplot(data_3_groupes, aes(x = Groupe3, y = MLRoM_MO, fill = Groupe3)) +
        subtitle = "Condition : Mousse - Axe Médio-Latéral",
        y = "Amplitude",
        x = "Groupe d'âge") 
+```
+
+Nettoyage de l'environnement :
+
+```{r}
+rm(resultats_3g)
 ```
