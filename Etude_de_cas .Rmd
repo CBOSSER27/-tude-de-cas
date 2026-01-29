@@ -122,8 +122,6 @@ remove_extremum_df <- function(data) {
     x[x < mini] <- mini
     
     data_clean[[col]] <- x
-
-    
   }
   
   return(data_clean)
@@ -192,6 +190,9 @@ perf_long <- perf_clean %>%
 
 ggplot(perf_long, aes(x = Condition, y = Valeur, fill = Axe)) +
   geom_boxplot() +
+  scale_fill_manual(
+    values = c("APRoM" = "#F2994EFF", "MLRoM" = "#B81840FF"), 
+    labels = c("Avant-Arrière (AP)", "Gauche-Droite (ML)")) +
   facet_wrap(~ Axe, scales = "free_y") + # Un graphique pour AP, un pour ML
   labs(title = "Synthèse des balancements posturaux (AP vs ML)",
        subtitle = "Comparaison selon les conditions sensorielles (après nettoyage)",
@@ -238,8 +239,7 @@ ggplot(synthese_graph, aes(x = Condition, y = Moyenne, fill = Axe)) +
   # Création des barres (stat="identity" car on donne déjà la moyenne)
   geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) +
   
-  
-  # Choix des couleurs et titres
+
   scale_fill_manual(values = c("AP" = "#F2994EFF", "ML" = "#B81840FF"), 
                     labels = c("Avant-Arrière (AP)", "Gauche-Droite (ML)")) +
   
@@ -262,7 +262,12 @@ tableau_mean <- data_clean %>%
          starts_with("CoPexc"),
          starts_with("APRoM"), 
          starts_with("MLRoM")) %>%
-  pivot_longer(cols = c("Vm_YO", "Vm_YF", "Vm_MO", "Aire_YO", "Aire_YF", "Aire_MO","theta_YO","theta_YF","theta_MO","CoPexc_YO","CoPexc_YF", "CoPexc_MO", "APRoM_YO", "APRoM_YF","APRoM_MO", "MLRoM_YO","MLRoM_YF", "MLRoM_MO"),
+  pivot_longer(cols = c(starts_with("Vm"), 
+                        starts_with("Aire"), 
+                        starts_with("theta"),
+                        starts_with("CoPexc"),
+                        starts_with("APRoM"), 
+         starts_with("MLRoM")),
                names_to = "Variable",
                values_to = "counts" )
 
