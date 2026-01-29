@@ -255,19 +255,38 @@ ggplot(synthese_graph, aes(x = Condition, y = Moyenne, fill = Axe)) +
 On commence par calculer la variation par rapport à YO pour chaque direction, on formate le texte, puis on s'occupe de la mise en forme finale du tableau, en modifiant l'odre des colonnes afin que YO (la donnée de référence) soit la premiere colonne.
 
 ```{r}
-tableau_score_1 <- synthese_graph%>%
-  group_by(Axe)%>%
+tableau_mean <- data_clean %>%
+  select(starts_with("Vm"), 
+         starts_with("Aire"), 
+         starts_with("theta"),
+         starts_with("CoPexc"),
+         starts_with("APRoM"), 
+         starts_with("MLRoM")) %>%
+  pivot_longer(cols = c("Vm_YO", "Vm_YF", "Vm_MO", "Aire_YO", "Aire_YF", "Aire_MO","theta_YO","theta_YF","theta_MO","CoPexc_YO","CoPexc_YF", "CoPexc_MO", "APRoM_YO", "APRoM_YF","APRoM_MO", "MLRoM_YO","MLRoM_YF", "MLRoM_MO"),
+               names_to = "Variable",
+               values_to = "counts" )
+
+tableau_mean <- tableau_mean %>%
+  group_by(Variable) %>%
+  summarise(mean_var = mean(counts)) %>%
+  separate(Variable, into = c("Axe", "Condition"), sep = "_") %>%
+  group_by(Axe) %>%
+  pivot_wider(names_from = Condition, values_from = mean_var)
+```
+
+```{r}
+tableau_score_variation <- tableau_mean%>%
   mutate(
-    Valeur_Ref = Moyenne[Condition == "YO"], 
-    Variation = (Moyenne - Valeur_Ref) / Valeur_Ref,
-    
-    Score = case_when(
-      Condition == "YO" ~ "Référence",
-      TRUE ~ sprintf("%+.0f%%", Variation * 100)
-    )
-  ) %>%
-  select(-c("Variation", "Valeur_Ref", "Moyenne"))%>%
-  pivot_wider(names_from = Condition, values_from = Score)
+    MO = (MO - YO) / YO,
+    YF = (YF - YO) / YO,
+
+    MO = case_when(
+      TRUE ~ sprintf("%+.0f%%", MO * 100)),
+    YF = case_when(
+      TRUE ~ sprintf("%+.0f%%", YF * 100),
+    ),
+    YO = "Référence"
+  )
 ```
 
 ##### Nuage de points et ellipses
