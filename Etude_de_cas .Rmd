@@ -250,6 +250,94 @@ ggplot(synthese_graph, aes(x = Condition, y = Moyenne, fill = Axe)) +
        fill = "Direction du mouvement") 
 ```
 
+##### L'histogramme global
+
+On commence par sélectionner les colonnes, on passe en format long, et on sépare les noms :
+
+```{r}
+synthese_graph_global <- data_clean %>%
+  select(starts_with("Aire"), starts_with("CoPexc"), 
+         starts_with("Vm")) %>%
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Valeur") %>%
+  separate(Variable, into = c("Axe", "Condition"), sep = "_") %>% 
+  mutate(Axe = str_replace(Axe, "RoM", "")) %>%
+  group_by(Condition, Axe) %>%
+  summarise(
+    Moyenne = mean(Valeur, na.rm = TRUE),
+    .groups = 'drop'
+  )
+```
+
+On s'assure que l'ordre soit bien YO -\> YF -\> MO et pas alphabétique :
+
+```{r}
+synthese_graph_global$Condition <- factor(synthese_graph_global$Condition, levels = c("YO", "YF", "MO"))
+```
+
+```{r}
+ggplot(synthese_graph_global, aes(x = Condition, y = Moyenne, fill = Axe)) +
+  
+  # Création des barres (stat="identity" car on donne déjà la moyenne)
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) +
+  
+  labs(title = "Stabilité posturale de l'enfant",
+       subtitle = "Comparaison selon la difficulté",
+       x = "Conditions (Facile -> Difficile)",
+       y = "Intensité",
+       fill = "Légende :") 
+```
+
+##### Cadran postural
+
+On prépare les données en créant des "tranches" (bins) de 15 degrés
+
+```{r}
+theta_cadrans <- data_clean %>%
+  select(starts_with("theta")) %>%
+  pivot_longer(cols = everything(), names_to = "Condition", values_to = "Angle") %>%
+  mutate(Condition = str_remove(Condition, "theta_"),
+         # On arrondit l'angle pour créer des catégories de tranches
+         Tranche = round(Angle / 15) * 15) %>%
+  group_by(Condition, Tranche) %>%
+  summarise(Nombre = n(), .groups = 'drop')
+```
+
+Calcul de la moyenne exacte pour le trait noir
+
+```{r}
+theta_means <- data_clean %>%
+  select(starts_with("theta")) %>%
+  pivot_longer(cols = everything(), names_to = "Condition", values_to = "Angle") %>%
+  mutate(Condition = str_remove(Condition, "theta_")) %>%
+  group_by(Condition) %>%
+  summarise(Moyenne = mean(Angle, na.rm = TRUE))
+```
+
+Graphique en "Cadran d'Intensité"
+
+```{r}
+ggplot(theta_cadrans, aes(x = Tranche, y = 1)) + # y=1 force toutes les barres à la même taille
+  # Les tranches colorées (toutes la même longueur)
+  geom_bar(aes(fill = Nombre), stat = "identity", width = 15, color = "white") +
+  
+  # Le trait de la moyenne (opaque, du centre vers le bord)
+  geom_segment(data = theta_means, aes(x = Moyenne, xend = Moyenne, y = 0, yend = 1.1), 
+               color = "black", size = 2, lineend = "round") +
+  
+  coord_polar(start = pi) + 
+  facet_wrap(~ Condition) +
+  
+  # Échelle de couleur : du très clair (rare) au très foncé (fréquent)
+  scale_fill_gradient(low = "#FFF3E0", high = "#E65100") + 
+  
+  scale_x_continuous(limits = c(-180, 180), breaks = seq(-180, 180, 45)) +
+  theme_minimal() +
+  labs(title = "Cadran des Directions de Balancement",
+       subtitle = "La couleur indique la fréquence ; le trait noir indique la direction moyenne.",
+       fill = "Nombre d'enfants", x = NULL, y = NULL) +
+  theme(axis.text.y = element_blank(), panel.grid.major.y = element_blank())
+```
+
 ##### Le tableau de "Score de Stabilité"
 
 La création de la table *mean* permet de visualiser la moyenne de chaque colonne en YO, YF et MO. Pour cela, on sélectionne toutes les colonnes dites *classiques* que l’on a nettoyées dans la table *data_clean*.
@@ -269,7 +357,7 @@ tableau_mean <- data_clean %>%
                         starts_with("theta"),
                         starts_with("CoPexc"),
                         starts_with("APRoM"), 
-         starts_with("MLRoM")),
+                        starts_with("MLRoM")),
                names_to = "Variable",
                values_to = "counts" )
 
@@ -282,7 +370,7 @@ tableau_mean <- tableau_mean %>%
   pivot_wider(names_from = Condition, values_from = mean_var)
 ```
 
-La table *score_variation* s’appuie sur la table *mean* créée précédemment. Elle permet d’observer l’augmentation en pourcentage en fonction des trois positions demandées aux enfants.
+La table *score_variation* s’appuie sur la table *mean* crée précédemment. Elle permet d’observer l’augmentation en pourcentage en fonction des trois positions demandées aux enfants.
 
 ```{r}
 tableau_score_variation <- tableau_mean%>%
@@ -307,7 +395,7 @@ Nous allons utiliser les variables suivante :
 
 -   APRoM_YO, APRoM_YF, APRoM_MO, MLRoM_YO, MLRoM_YF, MLRoM_MO
 
-Commencons par préparer les données pour le nuage de points (on a besoin d'avoir APRoM et MLRoM comme deux colonnes distinctes)
+Commençons par préparer les données pour le nuage de points (on a besoin d'avoir APRoM et MLRoM comme deux colonnes distinctes)
 
 ```{r}
 data_scatter <- data_clean %>%
@@ -366,6 +454,53 @@ Nettoyage de l'environnement :
 
 ```{r}
 rm(list = c("tableau_score_1", "synthese_graph", "data_scatter"))
+```
+
+##### Le radar
+
+Commençons par importer la librairie dont nous allons avoir besoin (en plus de tidyverse que nous avons importé précédemment.
+
+```{r}
+library(fmsb)
+```
+
+Sélection et préparation des données
+
+```{r}
+radar_prep <- data_clean %>%
+  select(starts_with("APRoM"), starts_with("MLRoM"), 
+         starts_with("Aire"), starts_with("CoPexc"), 
+         starts_with("Vm"), starts_with("theta")) %>%
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Valeur") %>%
+  separate(Variable, into = c("Metric", "Condition"), sep = "_") %>%
+  group_by(Metric, Condition) %>%
+  summarise(Moyenne = mean(Valeur, na.rm = TRUE), .groups = 'drop') %>%
+  pivot_wider(names_from = Metric, values_from = Moyenne)
+```
+
+Normalisation (nécessaire pour le radar)
+
+```{r}
+# On définit les bornes Max et Min pour l'échelle du radar
+df_radar <- radar_prep %>% select(-Condition)
+max_vals <- apply(df_radar, 2, max) * 1.1
+min_vals <- apply(df_radar, 2, min) * 0.9
+radar_final <- rbind(max_vals, min_vals, df_radar)
+```
+
+Tracé du graphique
+
+```{r}
+colors_border = c("#F2994EFF", "#76669BFF", "#DD708EFF") # Couleurs YO, YF, MO
+colors_in = c(rgb(0.95,0.6,0.3,0.3), rgb(0.46,0.4,0.6,0.3), rgb(0.86,0.44,0.56,0.3))
+
+radarchart(radar_final, 
+           pcol=colors_border, pfcol=colors_in, plwd=3, plty=1,
+           cglcol="grey80", cglty=1, cglwd=0.8,
+           vlcex=0.8, title="Profil Postural Global (Moyennes)")
+
+legend(x=1.5, y=1.2, legend = radar_prep$Condition, bty = "n", pch=20, 
+       col=colors_border, text.col = "black", cex=1, pt.cex=2)
 ```
 
 #### Q3.1 Une fois ces deux groupes constitués, quel test proposez-vous pour comparer les deux groupes d’enfants ? 
@@ -504,12 +639,10 @@ ggplot(data_3_groupes, aes(x = Groupe3, y = MLRoM_MO, fill = Groupe3)) +
 Nettoyage de l'environnement :
 
 ```{r}
-rm(resultats_3g)
+rm(list = c("resultats_3g", "data_3_groupes"))
 ```
 
-#### Q3.3 Était-il possible de tester l’effet de l’âge par un autre moyen que celui de constituer deux ou trois groupes ? Si oui, appliquez cet autre moyen aux données et présentez les résultats (tableaux et graphiques).
-
-##### Tableau : 
+#### Q3.3 Était-il possible de tester l’effet de l’âge par un autre moyen que celui de constituer deux ou trois groupes ? Si oui, appliquez cet autre moyen aux données et présentez les résultats (tableaux et graphiques).
 
 Nous allons crée un tableau d'observation, des variable classique pour la regression lineaire :
 
@@ -566,12 +699,9 @@ modele_rl <- data.frame(
 for (i in name_col_data) {
   modele_rl[[i]] <- modele(i)
 }
-
-
-
 ```
 
-#####  Graphique pour 19 colonnes : 
+##### Graphique pour 19 colonnes :
 
 Alors maintenant nous allons faire un graphique sur l'influance de l'age en fonction des 19 colonnes classique :
 
@@ -590,8 +720,6 @@ for ( i in name_col_data){
   
   print(p)  
 }
-
-
 ```
 
 ```{r}
