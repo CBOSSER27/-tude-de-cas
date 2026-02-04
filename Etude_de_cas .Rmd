@@ -507,8 +507,93 @@ Nettoyage de l'environnement :
 rm(resultats_3g)
 ```
 
-#### Q3.3 Était-il possible de tester l’effet de l’âge par un autre moyen que celui de constituer deux ou trois groupes ? Si oui, appliquez cet autre moyen aux données et présentez les résultats (tableaux et graphiques).  
+#### Q3.3 Était-il possible de tester l’effet de l’âge par un autre moyen que celui de constituer deux ou trois groupes ? Si oui, appliquez cet autre moyen aux données et présentez les résultats (tableaux et graphiques).
 
-##### Le tableau
+##### Tableau : 
 
-##### Le graphique
+Nous allons crée un tableau d'observation, des variable classique pour la regression lineaire :
+
+```{r}
+table_observe_rl <- data_clean %>%
+  select(
+    Age,
+    starts_with("Vm"),
+    starts_with("Aire"),
+    starts_with("theta"),
+    starts_with("CoPexc"),
+    starts_with("APRoM"),
+    starts_with("MLRoM")
+  ) %>%
+  
+  #  modéliser la performance posturale=> Y
+  rename_with(
+    .fn = ~ paste0("Y_", .x),
+    c(
+      starts_with("Vm"),
+      starts_with("Aire"),
+      starts_with("theta"),
+      starts_with("CoPexc"),
+      starts_with("APRoM"),
+      starts_with("MLRoM")
+    ))
+```
+
+Creation de la table du modèle de regression simple
+
+```{r}
+modele <- function(name_col) {
+  # name_col doit être une chaîne de caractères
+  formula_str <- paste(name_col, "~ Age")
+  m <- lm(as.formula(formula_str), data = table_observe_rl)
+  s <- summary(m)
+  
+  result <- c(
+    R2 = s$r.squared,
+    p_value = s$coefficients["Age", "Pr(>|t|)"],
+    beta0 = coef(m)[1],
+    beta1 = coef(m)[2]
+  )
+  
+  return(result)
+}
+
+# liste des noms de colonnees sans l'Age
+name_col_data <- setdiff(names(table_observe_rl), "Age")
+
+# table avec tout les resultats 
+modele_rl <- data.frame(
+  prod = c("R2", "p_value", "beta0", "beta1"))
+for (i in name_col_data) {
+  modele_rl[[i]] <- modele(i)
+}
+
+
+
+```
+
+#####  Graphique pour 19 colonnes : 
+
+Alors maintenant nous allons faire un graphique sur l'influance de l'age en fonction des 19 colonnes classique :
+
+```{r}
+
+for ( i in name_col_data){
+  p <- ggplot(table_observe_rl, aes_string(x = "Age", y = i)) +
+    geom_point(color = "blue", size = 2) +
+    geom_smooth(method = "lm", se = TRUE, color = "red") +
+    labs(
+      title = paste("Relation entre Age et", i),
+      x = "Age (années)",
+      y = i
+    ) +
+    theme_minimal()
+  
+  print(p)  
+}
+
+
+```
+
+```{r}
+rm(list = c("prod","name_col_data"))
+```
