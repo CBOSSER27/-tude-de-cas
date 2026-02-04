@@ -327,7 +327,7 @@ ggplot(corr_by_cond, aes(x = Var1, y = Var2, fill = Corr)) +
 Nettoyage de l'environnement :
 
 ```{r}
-rm(list = c("perf_long", "tableau_synthese", "perf", "data_corr_full", "corr_matrix_full", "corr_long_full", "data_long_corr", "corr_by_cond"))
+rm(list = c("perf_long", "tableau_synthese", "perf", "data_corr_full", "corr_matrix_full", "corr_long_full", "data_long_corr", "corr_by_cond", "theta_long"))
 ```
 
 #### **Q2.4 Vous devez présenter les résultats des variables dites « classiques » aux parents des enfants. Quels graphiques/tableaux proposez-vous ?**
