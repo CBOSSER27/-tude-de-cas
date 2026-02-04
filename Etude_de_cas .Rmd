@@ -155,11 +155,9 @@ perf <- DataPosturo %>%
 perf_clean <- remove_extremum_df(perf) #on l'utilisera plus tard pour                                                       des exemples
 ```
 
-Passons maintenant a la création du tableau :
+##### Tableau
 
 ```{r}
-library(tidyverse)
-
 tableau_synthese <- perf_clean %>%
   select(-Sujets) %>%                         # On exclut la colonne Sujets qui                                                  ne se prête pas aux calculs
   pivot_longer(cols = everything(), names_to = "Variable", values_to = "Valeur") %>%
@@ -178,7 +176,7 @@ print(tableau_synthese)
 
 (Pour generer le tableau de l'exemple, il suffit de modifier "*data_clean*" par "*perf_clean*")
 
-Et maintenant, pour les boxplots :
+##### Boxplots
 
 ```{r}
 perf_long <- perf_clean %>%
@@ -200,10 +198,105 @@ ggplot(perf_long, aes(x = Condition, y = Valeur, fill = Axe)) +
        y = "Amplitude de mouvement (mm)")
 ```
 
+##### Heatmap
+
+###### L'approche "Tout d'un coup" (Matrice 18x18)
+
+Sélection de toutes les variables clés pour les 3 conditions
+
+```{r}
+data_corr_full <- data_clean %>%
+  select(contains("APRoM"), contains("MLRoM"), 
+         contains("Aire"), contains("CoPexc"), 
+         contains("Vm"), contains("theta"))
+```
+
+Mise en place de la matrice de corrélation
+
+```{r}
+corr_matrix_full <- cor(data_corr_full, use = "complete.obs")
+
+corr_long_full <- as.data.frame(corr_matrix_full) %>%
+  rownames_to_column(var = "Var1") %>%
+  pivot_longer(cols = -Var1, names_to = "Var2", values_to = "Correlation")
+```
+
+Graphique
+
+```{r}
+ggplot(corr_long_full, aes(x = Var1, y = Var2, fill = Correlation)) +
+  geom_tile(color = "white") +
+  
+  # On n'affiche les chiffres que s'ils sont importants (>0.7 ou <-0.7) 
+  # pour ne pas surcharger le graphique car il y a beaucoup de cases
+  geom_text(aes(label = ifelse(abs(Correlation) > 0.7, round(Correlation, 2), "")), 
+            size = 2.5) + 
+  
+  scale_fill_gradient2(low = "#B81840FF", mid = "white", high = "#F2994EFF", 
+                       midpoint = 0, limit = c(-1, 1)) +
+  
+  theme_minimal() +
+  labs(title = "Matrice de corrélation globale (YO, YF, MO)",
+       subtitle = "Analyse de la stabilité des liens entre variables selon la difficulté",
+       x = NULL, y = NULL) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 8),
+        axis.text.y = element_text(size = 8))
+```
+
+###### L'approche "Séparée par cas" (3 Matrices 6x6)
+
+Préparation des données en incluant "Sujets" pour le pivotement
+
+```{r}
+data_long_corr <- data_clean %>%
+  select(Sujets, contains("APRoM"), contains("MLRoM"), 
+         contains("Aire"), contains("CoPexc"), 
+         contains("Vm"), contains("theta")) %>%
+  pivot_longer(cols = -Sujets, names_to = "Var_Full", values_to = "Valeur") %>%
+  separate(Var_Full, into = c("Metric", "Condition"), sep = "_")
+```
+
+Calcul des corrélations par condition avec group_modify
+
+```{r}
+corr_by_cond <- data_long_corr %>%
+  group_by(Condition) %>%
+  group_modify(~ {
+    # .x contient les données du groupe (Sujets, Metric, Valeur)
+    df_wide <- .x %>% 
+      pivot_wider(names_from = Metric, values_from = Valeur) %>%
+      select(-Sujets) # On enlève l'identifiant pour le calcul de corrélation
+    
+    # Calcul de la matrice
+    m <- cor(df_wide, use = "complete.obs")
+    
+    # Retour au format long pour ggplot
+    as.data.frame(m) %>% 
+      rownames_to_column("Var1") %>% 
+      pivot_longer(-Var1, names_to = "Var2", values_to = "Corr")
+  })
+```
+
+Graphique avec ggplot2
+
+```{r}
+ggplot(corr_by_cond, aes(x = Var1, y = Var2, fill = Corr)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = round(Corr, 2)), size = 2.5) +
+  facet_wrap(~ Condition) + 
+  scale_fill_gradient2(low = "#B81840FF", mid = "white", high = "#F2994EFF", 
+                       midpoint = 0, limit = c(-1,1)) +
+  theme_minimal() +
+  labs(title = "Matrices de corrélation par condition",
+       subtitle = "Comparaison de la structure du contrôle postural (YO vs YF vs MO)",
+       x = NULL, y = NULL) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+```
+
 Nettoyage de l'environnement :
 
 ```{r}
-rm(list = c("perf_long", "tableau_synthese", "perf"))
+rm(list = c("perf_long", "tableau_synthese", "perf", "data_corr_full", "corr_matrix_full", "corr_long_full", "data_long_corr", "corr_by_cond"))
 ```
 
 #### **Q2.4 Vous devez présenter les résultats des variables dites « classiques » aux parents des enfants. Quels graphiques/tableaux proposez-vous ?**
