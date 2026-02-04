@@ -176,7 +176,7 @@ print(tableau_synthese)
 
 (Pour generer le tableau de l'exemple, il suffit de modifier "*data_clean*" par "*perf_clean*")
 
-##### Boxplots
+##### Boxplots : AP vs ML
 
 ```{r}
 perf_long <- perf_clean %>%
@@ -196,6 +196,37 @@ ggplot(perf_long, aes(x = Condition, y = Valeur, fill = Axe)) +
        subtitle = "Comparaison selon les conditions sensorielles (après nettoyage)",
        x = "Conditions (YO, YF, MO)",
        y = "Amplitude de mouvement (mm)")
+```
+
+##### Boxplots : Theta 
+
+Préparation des données (passage au format long)
+
+```{r}
+theta_long <- data_clean %>%
+  select(Sujets, theta_YO, theta_YF, theta_MO) %>%
+  pivot_longer(cols = -Sujets, 
+               names_to = "Condition", 
+               values_to = "Angle",
+               names_prefix = "theta_")
+
+# On s'assure que l'ordre des conditions est correct
+theta_long$Condition <- factor(theta_long$Condition, levels = c("YO", "YF", "MO"))
+```
+
+Création du graphique
+
+```{r}
+ggplot(theta_long, aes(x = Condition, y = Angle, fill = Condition)) +
+  geom_boxplot(alpha = 0.6, outlier.shape = NA) + 
+  geom_jitter(width = 0.2, alpha = 0.5, color = "black") + 
+  scale_fill_manual(values = c("YO" = "#F2994EFF", "YF" = "#76669BFF", "MO" = "#DD708EFF")) +
+  
+  labs(title = "Analyse de la variabilité directionnelle (Theta)",
+       subtitle = "Distribution des axes principaux d'oscillation par condition",
+       x = "Conditions Expérimentales",
+       y = "Angle de l'axe principal (degrés)") +
+  coord_cartesian(ylim = c(-90, 90))
 ```
 
 ##### Heatmap
@@ -221,14 +252,14 @@ corr_long_full <- as.data.frame(corr_matrix_full) %>%
   pivot_longer(cols = -Var1, names_to = "Var2", values_to = "Correlation")
 ```
 
-Graphique
+Graphique :
+
+On n'affiche les chiffres que s'ils sont importants (\>0.7 ou \<-0.7) pour ne pas surcharger le graphique car il y a beaucoup de cases
 
 ```{r}
 ggplot(corr_long_full, aes(x = Var1, y = Var2, fill = Correlation)) +
   geom_tile(color = "white") +
   
-  # On n'affiche les chiffres que s'ils sont importants (>0.7 ou <-0.7) 
-  # pour ne pas surcharger le graphique car il y a beaucoup de cases
   geom_text(aes(label = ifelse(abs(Correlation) > 0.7, round(Correlation, 2), "")), 
             size = 2.5) + 
   
