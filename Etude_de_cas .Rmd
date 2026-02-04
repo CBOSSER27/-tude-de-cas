@@ -506,3 +506,9 @@ Nettoyage de l'environnement :
 ```{r}
 rm(resultats_3g)
 ```
+
+#### Q3.3 Était-il possible de tester l’effet de l’âge par un autre moyen que celui de constituer deux ou trois groupes ? Si oui, appliquez cet autre moyen aux données et présentez les résultats (tableaux et graphiques).  
+
+##### Le tableau
+
+##### Le graphique
