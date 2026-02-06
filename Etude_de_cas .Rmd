@@ -881,3 +881,25 @@ Nettoyage de l'environnement :
 ```{r}
 rm(list = c("prod","name_col_data","table_observe_rl","p","modele_rl", "i"))
 ```
+
+#### Q3.4 Evaluez l’effet de l’âge sur la taille et le poids. Peut-on s’assurer que les effets (s'il y en a) sont bien dus à l’âge et non à la taille ou au poids ? 
+
+##### Tableau et graphe :
+
+```{r}
+table_ATP <- data_clean %>%
+  select(c("Age","Poids","Taille"))
+
+table_ATP %>%
+  mutate(
+    Taille_std = scale(Taille),
+    Poids_std  = scale(Poids)
+  ) %>%
+  pivot_longer(c(Taille, Poids)) %>%
+  ggplot(aes(Age, value, colour = name)) +
+  geom_line() +
+  labs(y = "Valeurs standardisées", colour = "") +
+  theme_minimal()
+
+
+```
