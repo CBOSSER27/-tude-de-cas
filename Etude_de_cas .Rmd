@@ -579,7 +579,7 @@ ggplot(data_scatter, aes(x = Aire, y = Vm, color = Condition, fill = Condition))
 Nettoyage de l'environnement :
 
 ```{r}
-rm(list = c("tableau_score_1", "synthese_graph", "data_scatter"))
+rm(list = c("tableau_score_1", "synthese_graph", "data_scatter","theta_cadrans","theta_means","synthese_graph_global"))
 ```
 
 ##### Le radar
@@ -587,6 +587,7 @@ rm(list = c("tableau_score_1", "synthese_graph", "data_scatter"))
 Commençons par importer la librairie dont nous allons avoir besoin (en plus de tidyverse que nous avons importé précédemment.
 
 ```{r}
+# install.packages("fmsb")
 library(fmsb)
 ```
 
@@ -627,6 +628,10 @@ radarchart(radar_final,
 
 legend(x=1.5, y=1.2, legend = radar_prep$Condition, bty = "n", pch=20, 
        col=colors_border, text.col = "black", cex=1, pt.cex=2)
+```
+
+```{r}
+rm(list = c("radar_final", "radar_prep","df_radar","tableau_mean","tableau_score_variation"))
 ```
 
 #### Q3.1 Une fois ces deux groupes constitués, quel test proposez-vous pour comparer les deux groupes d’enfants ? 
@@ -871,6 +876,8 @@ for (i in modele_rl$Y) {
 
 ```
 
+Nettoyage de l'environnement :
+
 ```{r}
-rm(list = c("prod","name_col_data"))
+rm(list = c("prod","name_col_data","table_observe_rl","p","modele_rl", "i"))
 ```
