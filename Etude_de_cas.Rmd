@@ -781,6 +781,8 @@ Nous allons crée un tableau d'observation, des variable classique pour la regre
 table_observe_rl <- data_clean %>%
   select(
     Age,
+    Taille,
+    Poids,
     starts_with("Vm"),
     starts_with("Aire"),
     starts_with("theta"),
@@ -805,7 +807,7 @@ table_observe_rl <- data_clean %>%
 Creation de la table du modèle de regression simple
 
 ```{r}
-modele <- function(name_col) {
+modele_simple <- function(name_col) {
   # name_col doit être une chaîne de caractères
   formula_str <- paste(name_col, "~ Age")
   m <- lm(as.formula(formula_str), data = table_observe_rl)
@@ -827,14 +829,14 @@ modele <- function(name_col) {
 }
 
 # liste des noms de colonnees sans l'Age
-name_col_data <- setdiff(names(table_observe_rl), "Age")
+name_col_data <- setdiff(names(table_observe_rl), c("Age","Poids","Taille"))
 
 # table avec tout les resultats 
 name_col_data <- names(table_observe_rl) %>%
   keep(~ str_starts(.x, "Y_"))
 
 
-modele_rl <- map_dfr(name_col_data, modele)
+modele_rls <- map_dfr(name_col_data, modele_simple)
 ```
 
 ##### Graphique pour 19 colonnes :
@@ -843,7 +845,7 @@ Alors maintenant nous allons faire un graphique sur l'influance de l'age en fonc
 
 ```{r}
 
-for (i in modele_rl$Y) {
+for (i in modele_rls$Y) {
 
   p <- ggplot(table_observe_rl, aes(x = Age, y = .data[[i]])) +
     
@@ -879,7 +881,7 @@ for (i in modele_rl$Y) {
 Nettoyage de l'environnement :
 
 ```{r}
-rm(list = c("prod","name_col_data","table_observe_rl","p","modele_rl", "i"))
+rm(list = c("prod","name_col_data","p","modele_rl", "i"))
 ```
 
 #### Q3.4 Evaluez l’effet de l’âge sur la taille et le poids. Peut-on s’assurer que les effets (s'il y en a) sont bien dus à l’âge et non à la taille ou au poids ? 
@@ -928,4 +930,40 @@ ggplot(cor_long, aes(Var1, Var2, fill = Freq)) +
   labs(title = "Matrice de corrélation (Age, Poids, Taille)",
        x = "", y = "") +
   coord_fixed()
+```
+
+```{r}
+modele_multiple <- function(name_col) {
+  formula_full <- paste(name_col, "~ Age + Taille + Poids")
+  formula_age_only <- paste(name_col, "~ Age")
+  
+  m_full <- lm(as.formula(formula_full), data = table_observe_rl)
+  m_age_only <- lm(as.formula(formula_age_only), data = table_observe_rl)
+  
+  s <- summary(m_full)
+  p_value_age <- s$coefficients["Age", "Pr(>|t|)"]
+  
+  # Test si Taille + Poids apportent un effet significatif
+  p_value_taille_poids <- anova(m_age_only, m_full)$`Pr(>F)`[2]
+  
+  du_age <- ifelse(p_value_age < 0.05 & p_value_taille_poids >= 0.05, "Oui", "Non")
+  
+  tibble(
+    Y = name_col,
+    R2 = s$r.squared,
+    p_value_age = p_value_age,
+    p_value_taille_poids = p_value_taille_poids,
+    du_age = du_age
+  )
+}
+
+# liste des noms de colonnees sans l'Age
+name_col_data <- setdiff(names(table_observe_rl), c("Age","Poids","Taille"))
+
+# table avec tout les resultats 
+name_col_data <- names(table_observe_rl) %>%
+  keep(~ str_starts(.x, "Y_"))
+
+
+modele_rlm <- map_dfr(name_col_data, modele_multiple)
 ```
