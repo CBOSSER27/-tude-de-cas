@@ -13,7 +13,7 @@ library(tidyverse)
 library(ggplot2)
 library(readxl)
 
-setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+# setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 DataPosturo <- read_excel("DataPosturo.xlsx")
 summary(DataPosturo)
 ```
@@ -22,7 +22,6 @@ Voici la manière dont nous avons generees les boxplots utilisés pour illustrer
 
 ```{r}
 #creation du data-frame pour l'exemple
-
 
 performance <- DataPosturo %>%
   select(Sujets, starts_with("APRoM"), starts_with("MLRoM")) %>%
@@ -165,7 +164,6 @@ tableau_synthese <- perf_clean %>%
   pivot_longer(cols = everything(), names_to = "Variable", values_to = "Valeur") %>%
   group_by(Variable) %>%
   summarise(
-    N_Valide = sum(!is.na(Valeur)), # Compte les données non-NA
     Moyenne = round(mean(Valeur, na.rm = TRUE), 2),
     Ecart_Type = round(sd(Valeur, na.rm = TRUE), 2),
     Mediane = round(median(Valeur, na.rm = TRUE), 2),
@@ -329,7 +327,12 @@ ggplot(corr_by_cond, aes(x = Var1, y = Var2, fill = Corr)) +
 Nettoyage de l'environnement :
 
 ```{r}
-rm(list = c("perf_long", "tableau_synthese", "perf", "data_corr_full", "corr_matrix_full", "corr_long_full", "data_long_corr", "corr_by_cond", "theta_long"))
+rm(list = c("perf_long",  "perf",
+            "tableau_synthese",
+            "theta_long",
+            "data_corr_full", "corr_matrix_full", "corr_long_full", 
+            "data_long_corr", "corr_by_cond"
+            ))
 ```
 
 #### **Q2.4 Vous devez présenter les résultats des variables dites « classiques » aux parents des enfants. Quels graphiques/tableaux proposez-vous ?**
@@ -579,7 +582,9 @@ ggplot(data_scatter, aes(x = Aire, y = Vm, color = Condition, fill = Condition))
 Nettoyage de l'environnement :
 
 ```{r}
-rm(list = c("tableau_score_1", "synthese_graph", "data_scatter","theta_cadrans","theta_means","synthese_graph_global"))
+rm(list = c("synthese_graph", "synthese_graph_global",
+            "data_scatter",
+            "theta_cadrans","theta_means"))
 ```
 
 ##### Le radar
@@ -631,7 +636,8 @@ legend(x=1.5, y=1.2, legend = radar_prep$Condition, bty = "n", pch=20,
 ```
 
 ```{r}
-rm(list = c("radar_final", "radar_prep","df_radar","tableau_mean","tableau_score_variation"))
+rm(list = c("radar_final", "radar_prep","df_radar",
+            "tableau_mean","tableau_score_variation"))
 ```
 
 #### Q3.1 Une fois ces deux groupes constitués, quel test proposez-vous pour comparer les deux groupes d’enfants ? 
@@ -881,7 +887,7 @@ for (i in modele_rls$Y) {
 Nettoyage de l'environnement :
 
 ```{r}
-rm(list = c("prod","name_col_data","p","modele_rl", "i"))
+rm(list = c("name_col_data","p","modele_rls", "i"))
 ```
 
 #### Q3.4 Evaluez l’effet de l’âge sur la taille et le poids. Peut-on s’assurer que les effets (s'il y en a) sont bien dus à l’âge et non à la taille ou au poids ? 
@@ -909,7 +915,6 @@ data_atp %>%
 ##### Tableau de corrélation
 
 ```{r}
-library(ggplot2)
 library(tidyr)
 library(dplyr)
 
@@ -931,6 +936,8 @@ ggplot(cor_long, aes(Var1, Var2, fill = Freq)) +
        x = "", y = "") +
   coord_fixed()
 ```
+
+##### Modèle de regression multiple
 
 ```{r}
 modele_multiple <- function(name_col) {
@@ -966,4 +973,121 @@ name_col_data <- names(table_observe_rl) %>%
 
 
 modele_rlm <- map_dfr(name_col_data, modele_multiple)
+```
+
+##### Backward elimination
+
+Installation des librairies
+
+```{r}
+library(dplyr)
+library(purrr)
+library(broom)
+```
+
+Creation de la table
+
+```{r}
+vars_to_test <- table_observe_rl %>%
+  select(starts_with("Y_"))%>%
+  names()
+```
+
+Fonction d'analyse
+
+```{r}
+analyser_tout_le_monde <- function(var_name) {
+  
+  formule <- as.formula(paste(var_name, "~ Age + Taille + Poids"))
+  modele_complet <- lm(formule, data = table_observe_rl)
+  
+  # Sélection descendante (AIC)
+  modele_optimal <- step(modele_complet, direction = "backward", trace = 0)
+  
+  s <- summary(modele_optimal)
+  coeffs <- names(coef(modele_optimal))[-1] 
+  
+  # Est-ce que l'âge est resté dans le modèle final ?
+  age_reste <- "Age" %in% coeffs
+  
+  
+  # Ligne de résultat
+  tibble(
+    Variable = var_name,
+    
+    # Quelles variables ont gagné ? (ex: "Taille + Poids")
+    Gagnants = if(length(coeffs) == 0) "Aucun" else paste(coeffs, collapse = " + "),
+    
+    # Est-ce que l'âge est là ?
+    Effet_Age = if_else(age_reste, "OUI", "NON"),
+    
+    # Quel est le R2 final (la qualité du modèle retenu)
+    R2_Final = round(s$adj.r.squared, 3),
+    
+    # La p-value de l'âge (seulement s'il est resté, sinon NA)
+    P_Value_Age = if(age_reste) s$coefficients["Age", "Pr(>|t|)"] else NA
+  )
+}
+```
+
+Lancement du calcul sur toutes les colonnes
+
+```{r}
+resultats_globaux <- map_dfr(vars_to_test, analyser_tout_le_monde)
+
+resultats_tries <- resultats_globaux %>%
+  arrange(desc(Effet_Age), desc(R2_Final))
+
+print(resultats_tries)
+```
+
+Nettoyage
+
+```{r}
+rm(list = c("data_atp", 
+            "cor_mat", "cor_long", 
+            "table_ATP", "table_observe_rl", "modele_rlm",
+            "vars_to_test", "resultats_globaux", "resultats_tries"))
+```
+
+### Ouverture
+
+```{r}
+modele_maturation <- lm(Age ~ MLRoM_MO + APRoM_MO + theta_YF + Aire_MO, 
+                        data = data_clean)
+sigma <- summary(modele_maturation)$sigma
+
+
+data_visu <- data_clean %>%
+  mutate(
+    Age_Predit = predict(modele_maturation),
+    Residu = Age_Predit - Age,
+    # Un point est "Atypique" s'il est à plus de 2 écarts-types de la réalité (95%)
+    Atypique = abs(Residu) > 2 * sigma 
+  )
+
+
+ggplot(data_visu, aes(x = Age, y = Age_Predit)) +
+  
+  # Intervalle de prédiction à approx. 95%)
+  geom_ribbon(aes(ymin = Age - 2*sigma, ymax = Age + 2*sigma), 
+              fill = "gray90", alpha = 0.5) +
+  
+  # La ligne idéale (y=x) en pointillé
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray50") +
+  
+  # Les points (Rouge si atypique, Vert si normal)
+  geom_point(aes(color = Atypique), size = 3) +
+  
+  
+  scale_color_manual(values = c("FALSE" = "#F2994E", "TRUE" = "#B81840"),
+                     labels = c("Dans la norme", "Atypique / Retard marqué")) +
+  
+  labs(title = "Diagnostic Postural : Âge Réel vs Âge Prédit",
+       subtitle = paste0("La zone grise représente l'intervalle de tolérance normale (+/- ", round(2*sigma, 1), " ans).\nLes points rouges signalent un décalage significatif."),
+       x = "Âge Chronologique (Réel)",
+       y = "Âge Postural (Prédit)",
+       color = "Diagnostic") +
+  
+  theme_minimal()
 ```
