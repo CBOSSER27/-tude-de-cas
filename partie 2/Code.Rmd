@@ -94,8 +94,157 @@ analyser_variable <- function(var, df) {
 }
 ```
 
+Utilisation de la fonction créer precedemment sur nos données :
+
 ```{r}
 resultats_finaux <- do.call(rbind, lapply(vars, analyser_variable, df = table_appariement))
 
 print(resultats_finaux)
+```
+
+##### Illustration du résultat : 
+
+```{r}
+library(ggplot2)
+library(patchwork)
+
+creer_plot_appariement <- function(var_name, titre, unite) {
+  ggplot(table_appariement, aes(x = Sujets, y = .data[[var_name]], fill = Sujets)) +
+    geom_boxplot(alpha = 0.4, outlier.shape = NA, width = 0.5) +
+    geom_jitter(aes(color = Sujets), width = 0.15, alpha = 0.7, size = 2) +
+    stat_summary(fun = mean, geom = "point", shape = 4, size = 3, color = "#B81840FF", stroke = 1.5) +
+    
+    scale_fill_manual(values = c("TD" = "#76669BFF", "TSA" = "#F2994EFF")) +
+    scale_color_manual(values = c("TD" = "#76669BFF", "TSA" = "#F2994EFF")) +
+    labs(title = titre, y = paste(var_name, unite), x = "") +
+    theme_minimal() +
+    theme(legend.position = "none",
+          plot.title = element_text(face = "bold", hjust = 0.5),
+          panel.grid.minor = element_blank())
+}
+
+# Génération des trois graphiques
+p1 <- creer_plot_appariement("Age", "Âge des sujets", "(ans)")
+p2 <- creer_plot_appariement("Taille", "Taille des sujets", "(cm)")
+p3 <- creer_plot_appariement("Poids", "Masse des sujets", "(kg)")
+
+# Assemblage final
+figure_finale <- p1 + p2 + p3 + 
+  plot_annotation(title = "Vérification de la comparabilité des groupes après appariement",
+                  subtitle = "Les boîtes représentent les quartiles, les points le détail individuel, et les croix rouges les moyennes.",
+                  theme = theme(plot.title = element_text(size = 16, face = "bold")))
+
+print(figure_finale)
+
+# Sauvegarde pour le rapport
+# ggsave("Verification_Appariement.png", figure_finale, width = 12, height = 5, dpi = 300)
+```
+
+Nettoyage de l'environnement :
+
+```{r}
+rm(list = c("figure_finale", "p1", "p2", "p3", "analyser_variable", "calc_smd", "creer_plot_appariement", "resultats_finaux", "desc_stats", "vars"))
+```
+
+### **Q2.2 Assurez-vous qu’il n’y a pas d’anomalies dans les données recueillies.**
+
+#### Vérification des données
+
+Fonction permettant de trouver les valeurs extremes dans une colonne :
+
+```{r}
+find_extremum <- function(data, col) {
+  
+  x <- data[[col]]
+  
+  Q1 <- quantile(x, 0.25, na.rm = TRUE)
+  Q3 <- quantile(x, 0.75, na.rm = TRUE)
+  
+  maxi <- min(max(x, na.rm = TRUE), Q3 + 1.5 * (Q3 - Q1))
+  mini <- max(min(x, na.rm = TRUE), Q1 - 1.5 * (Q3 - Q1))
+  
+  extremum <- x[x < mini | x > maxi]
+  
+  if (length(extremum) == 0) {              #pour que ce soit plus lisible
+    extremum <- NA
+  }
+  
+  list(
+    variable = col,
+    extremum = extremum,
+    n_extremum = sum(!is.na(extremum)),
+    mini = mini,
+    maxi = maxi
+  )
+}
+```
+
+Et maintenant, une fonction permettant de trouver les valeurs extremes dans un data-frame :
+
+```{r}
+find_extremum_df <- function(data) {
+  
+  num_cols <- sapply(data, is.numeric)
+  
+  extremum_list <- lapply(
+    names(data)[num_cols],                    #permet d'avoir le nom des                                                           colonnes numeriques
+    function(col) find_extremum(data, col)
+  )
+  
+  names(extremum_list) <- names(data)[num_cols]
+  
+  return(extremum_list)
+}
+```
+
+On a decider de le faire dans deux fonctions differentes, bien qu'on aurais pu le faire dans une meme fonction car on trouvais ça plus lisible.
+
+Laissons maintenant place a notre fonction *count_extremum_df* qui permet de calculer le nombre de valeur aberrante d'un data-frame donné en utilisant les fonctions definie ci-dessus.
+
+```{r}
+count_extremum_df <- function(data) {
+  extremum_list <- find_extremum_df(data)
+  sum(sapply(extremum_list, function(x) x$n_extremum))
+}
+
+count_extremum_df(table_appariement)              #retourne le nombre de valeurs                                                                                aberrantes totales
+```
+
+#### Correction des valeurs aberrantes : 
+
+Maintenant que l'on sais comment trouver les valeurs aberrantes, on peut les remplacer par des valeurs inexistante via la fonction suivante :
+
+```{r}
+remove_extremum_df <- function(data) {
+  
+  data_clean <- data
+  extremum_list <- find_extremum_df(data)
+  
+  for (col in names(extremum_list)) {
+    
+    mini <- extremum_list[[col]]$mini
+    maxi <- extremum_list[[col]]$maxi
+    
+    x <- data[[col]]
+    
+    # Remplacement par les bornes min/max acceptables (winsorisation)
+    x[x > maxi] <- maxi
+    x[x < mini] <- mini
+    
+    data_clean[[col]] <- x
+  }
+  
+  return(data_clean)
+}
+
+data_clean <- remove_extremum_df(table_appariement)
+count_extremum_df(data_clean)
+```
+
+On obtiens ainsi *data_clean*, le nouveau tableau avec les données "nettoyer", c'est-à-dire que nous avons *traitées les valeurs aberrantes par "winsorisation". Les observations inférieures à la borne basse (Q1 − 1,5×IQR) ont été remplacées par cette borne, et celles supérieures à la borne haute (Q3 + 1,5×IQR) ont été remplacées par la borne correspondante. Cette approche permet de limiter l'influence des valeurs extrêmes tout en conservant l'ensemble des données. Pour prendre cette décision, nous avons d'abord testé le remplacement des valeurs aberrantes par la moyenne, puis par la médiane. Cependant, avec ces deux méthodes, certaines valeurs aberrantes subsistaient encore dans le dataset.*
+
+Nettoyage de l'environnement :
+
+```{r}
+rm(list = c("count_extremum_df", "find_extremum", "find_extremum_df", "remove_extremum_df"))
 ```
