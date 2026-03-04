@@ -1,0 +1,112 @@
+---
+title: "etud_de_cas_partie2"
+output: html_document
+---
+
+# Analyse de la posture chez des enfants âgés de 6 à 12ans, neurotypiques et atteints de trouble du spectre de l’autisme : Deuxième partie : effet du TSA 
+
+## Données descriptives :
+
+### **Q2.1 En fait, 40 enfants NT (neurotypiques) ont été analysés. Parmi cette population, 24 ont été choisis pour apparier en âge, taille et masse les enfants NT et TSA. Comment peut-on procéder pour effectuer cet appariement ? Comment peut-on vérifier que l’appariement a été correctement effectué ? Vérifiez ensuite cet appariement.** 
+
+Creation d'une fonction de comparaison :
+
+```{r}
+#installation des bibliothèques
+
+library(tidyverse)
+library(ggplot2)
+library(readxl)
+
+# setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+DataPosturo <- read_excel("DataPosturo_P2.xlsx")
+summary(DataPosturo)
+```
+
+table test :
+
+```{r}
+library(dplyr)
+
+# Préparer les tables NT et TSA
+table_NT <- DataPosturo %>%
+  filter(Sujets == "TD") %>%
+  select(c("Names","Sujets","Age","Poids","Taille"))
+
+table_TSA <- DataPosturo %>%
+  filter(Sujets == "TSA") %>%
+  select(c("Names","Sujets","Age","Poids","Taille"))
+
+
+library(dplyr)
+
+appariement <- function(data1, data2, max_pairs = 20, caliper = 2) {
+
+  X1 <- as.matrix(data1[, c("Age","Poids","Taille")])
+  X2 <- as.matrix(data2[, c("Age","Poids","Taille")])
+  S <- cov(rbind(X1, X2))
+  
+  distance_matrix <- matrix(NA, nrow = nrow(X1), ncol = nrow(X2))
+  for(i in 1:nrow(X1)){
+    for(j in 1:ncol(distance_matrix)){
+      distance_matrix[i,j] <- mahalanobis(X1[i,], X2[j,], S)
+    }
+  }
+  
+  matches <- data.frame()
+  
+  for(i in 1:nrow(distance_matrix)){
+    for(j in 1:ncol(distance_matrix)){
+      d <- distance_matrix[i,j]
+      if(d <= caliper){
+        new_row <- cbind(data1[i,], data2[j,], Distance = d)
+        # Renommer pour éviter les doublons
+        names(new_row) <- c(paste0(names(data1), "_NT"),
+                            paste0(names(data2), "_TSA"),
+                            "Distance")
+        
+        if(nrow(matches) < max_pairs){
+          matches <- rbind(matches, new_row)
+        } else {
+          max_current <- max(matches$Distance)
+          if(d < max_current){
+            idx_remove <- which.max(matches$Distance)
+            matches[idx_remove, ] <- new_row
+          }
+        }
+      }
+    }
+  }
+  
+  matches <- matches[order(matches$Distance), ]
+  
+  # --- Déplier en 2 lignes par match ---
+  matches_long <- bind_rows(
+    matches %>%
+      transmute(
+        Names = Names_NT,
+        Sujets = Sujets_NT,
+        Age = Age_NT,
+        Poids = Poids_NT,
+        Taille = Taille_NT,
+        Compatibilite = Names_TSA
+      ),
+    matches %>%
+      transmute(
+        Names = Names_TSA,
+        Sujets = Sujets_TSA,
+        Age = Age_TSA,
+        Poids = Poids_TSA,
+        Taille = Taille_TSA,
+        Compatibilite = Names_NT
+      )
+  )
+  
+  return(matches_long)
+}
+
+# Appliquer
+table_appariement <- appariement(table_NT, table_TSA)
+dim(table_appariement)  # 40 lignes si 20 matches
+head(table_appariement)
+```
