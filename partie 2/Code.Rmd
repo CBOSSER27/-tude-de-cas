@@ -120,7 +120,6 @@ head(table_appariement)
 ##### Analyse descriptive
 
 ```{r}
-#library(dplyr)
 vars <- c("Age", "Taille", "Poids")
 
 table_appariement$Age    <- as.numeric(as.character(table_appariement$Age))
@@ -241,7 +240,7 @@ print(figure_finale)
 Nettoyage de l'environnement :
 
 ```{r}
-rm(list = c("figure_finale", "p1", "p2", "p3", "analyser_variable", "calc_smd", "creer_plot_appariement", "resultats_finaux", "desc_stats", "vars"))
+rm(list = c("table_NT", "table_TSA", "appariement", "figure_finale", "p1", "p2", "p3", "analyser_variable", "calc_smd", "creer_plot_appariement", "resultats_finaux", "desc_stats", "vars"))
 ```
 
 ### **Q2.2 Assurez-vous qu’il n’y a pas d’anomalies dans les données recueillies.**
@@ -306,6 +305,7 @@ count_extremum_df <- function(data) {
 }
 
 count_extremum_df(table_appariement)              #retourne le nombre de valeurs                                                                                aberrantes totales
+count_extremum_df(DataPosturo)
 ```
 
 #### Correction des valeurs aberrantes :
