@@ -330,8 +330,8 @@ count_extremum_df <- function(data) {
   sum(sapply(extremum_list, function(x) x$n_extremum))
 }
 
-count_extremum_df(table_appariement)              #retourne le nombre de valeurs                                                                                aberrantes totales
-count_extremum_df(DataPosturo)
+# aberrantes totales
+count_extremum_df(data_appariement)
 ```
 
 #### Correction des valeurs aberrantes :
@@ -361,7 +361,7 @@ remove_extremum_df <- function(data) {
   return(data_clean)
 }
 
-data_clean <- remove_extremum_df(table_appariement)
+data_clean <- remove_extremum_df(data_appariement)
 count_extremum_df(data_clean)
 ```
 
@@ -379,7 +379,7 @@ rm(list = c("count_extremum_df", "find_extremum", "find_extremum_df", "remove_ex
 
 ```{r}
 # Création du tableau de synthèse
-tableau_descriptif <- data_appariement %>%
+tableau_descriptif <- data_clean %>%
   group_by(Sujets) %>%
   summarise(
     Effectif = n(),
@@ -392,10 +392,10 @@ tableau_descriptif <- data_appariement %>%
   )
 ```
 
-#### Le nuage de point 
+#### Le nuage de point
 
 ```{r}
-plot_appariement <- ggplot(df, aes(x = Taille, y = Poids, color = Sujets)) +
+plot_appariement <- ggplot(data_clean, aes(x = Taille, y = Poids, color = Sujets)) +
   geom_point(size = 3, alpha = 0.7) +
   theme_minimal() +
   labs(
@@ -413,7 +413,7 @@ print(plot_appariement)
 Conversion de la variable Sexe en catégorie (facteur) pour le graphique
 
 ```{r}
-df_sexe <- df %>%
+df_sexe <- data_clean %>%
   mutate(Sexe_Label = ifelse(Sexe == 1, "Sexe 1", "Sexe 2")) 
 
 plot_sexe <- ggplot(df_sexe, aes(x = Sujets, fill = Sexe_Label)) +
@@ -429,10 +429,10 @@ plot_sexe <- ggplot(df_sexe, aes(x = Sujets, fill = Sexe_Label)) +
 print(plot_sexe)
 ```
 
-####  Les Courbes de Densité (Density plots) 
+#### Les Courbes de Densité (Density plots)
 
 ```{r}
-plot_densite <- ggplot(df, aes(x = Aire_YO, fill = Sujets)) +
+plot_densite <- ggplot(data_clean, aes(x = Aire_YO, fill = Sujets)) +
   geom_density(alpha = 0.5) +
   theme_minimal() +
   labs(
@@ -497,7 +497,7 @@ generer_boxplots_famille <- function(data, prefixe_variable, unite_y, titre_grap
 Utilisons maintenant cette fonction sur nos variables :
 
 ```{r}
-df <- data_appariement
+df <- data_clean
 
 # Pour la famille des AIRES ("Aire_YO", "Aire_YF", "Aire_MO")
 plot_aires <- generer_boxplots_famille(
