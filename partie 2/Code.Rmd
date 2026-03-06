@@ -128,9 +128,8 @@ Appliquons cette dernière à nos données :
 
 ```{r}
 table_appariement <- appariement(table_NT, table_TSA)
-
-# dim(table_appariement)  # 40 lignes si 20 matches
-# head(table_appariement)
+dim(table_appariement)  # 40 lignes si 20 matches
+head(table_appariement)
 ```
 
 #### Vérifiez ensuite cet appariement.
@@ -138,7 +137,6 @@ table_appariement <- appariement(table_NT, table_TSA)
 ##### Analyse descriptive
 
 ```{r}
-#library(dplyr)
 vars <- c("Age", "Taille", "Poids")
 
 table_appariement$Age    <- as.numeric(as.character(table_appariement$Age))
@@ -259,7 +257,7 @@ print(figure_finale)
 Nettoyage de l'environnement :
 
 ```{r}
-rm(list = c("figure_finale", "p1", "p2", "p3", "analyser_variable", "calc_smd", "creer_plot_appariement", "resultats_finaux", "desc_stats", "vars"))
+rm(list = c("table_NT", "table_TSA", "appariement", "figure_finale", "p1", "p2", "p3", "analyser_variable", "calc_smd", "creer_plot_appariement", "resultats_finaux", "desc_stats", "vars"))
 ```
 
 ### **Q2.2 Assurez-vous qu’il n’y a pas d’anomalies dans les données recueillies.**
@@ -271,8 +269,6 @@ list_name <- (table_appariement$Names)
 
 data_appariement <- DataPosturo %>%
   filter( Names %in% list_name)
-
-
 ```
 
 #### Vérification des données
@@ -334,7 +330,8 @@ count_extremum_df <- function(data) {
   sum(sapply(extremum_list, function(x) x$n_extremum))
 }
 
-count_extremum_df(DataPosturo)              #retourne le nombre de valeurs                                                                                aberrantes totales
+count_extremum_df(table_appariement)              #retourne le nombre de valeurs                                                                                aberrantes totales
+count_extremum_df(DataPosturo)
 ```
 
 #### Correction des valeurs aberrantes :
@@ -364,7 +361,7 @@ remove_extremum_df <- function(data) {
   return(data_clean)
 }
 
-data_clean <- remove_extremum_df(DataPosturo)
+data_clean <- remove_extremum_df(table_appariement)
 count_extremum_df(data_clean)
 ```
 
@@ -374,4 +371,292 @@ Nettoyage de l'environnement :
 
 ```{r}
 rm(list = c("count_extremum_df", "find_extremum", "find_extremum_df", "remove_extremum_df"))
+```
+
+### Q2.3 Proposez des tableaux et graphiques pour synthétiser ces données descriptives. N’oubliez pas de bien expliquer et justifier les choix que vous faites.
+
+#### Tableau descriptif :
+
+```{r}
+# Création du tableau de synthèse
+tableau_descriptif <- data_appariement %>%
+  group_by(Sujets) %>%
+  summarise(
+    Effectif = n(),
+    Age_Moyen = mean(Age, na.rm = TRUE),
+    Age_SD = sd(Age, na.rm = TRUE),
+    Taille_Moyenne = mean(Taille, na.rm = TRUE),
+    Taille_SD = sd(Taille, na.rm = TRUE),
+    Poids_Moyenne = mean(Poids, na.rm = TRUE),
+    Poids_SD = sd(Poids, na.rm = TRUE)
+  )
+```
+
+#### Le nuage de point 
+
+```{r}
+plot_appariement <- ggplot(df, aes(x = Taille, y = Poids, color = Sujets)) +
+  geom_point(size = 3, alpha = 0.7) +
+  theme_minimal() +
+  labs(
+    title = "Validation visuelle de l'appariement Taille/Masse",
+    x = "Taille (cm)",
+    y = "Masse (kg)"
+  ) +
+  scale_color_manual(values = c("TD" = "#76669BFF", "TSA" = "#F2994EFF"))
+
+print(plot_appariement)
+```
+
+#### Le diagramme en barre (Barplot):
+
+Conversion de la variable Sexe en catégorie (facteur) pour le graphique
+
+```{r}
+df_sexe <- df %>%
+  mutate(Sexe_Label = ifelse(Sexe == 1, "Sexe 1", "Sexe 2")) 
+
+plot_sexe <- ggplot(df_sexe, aes(x = Sujets, fill = Sexe_Label)) +
+  geom_bar(position = "dodge", alpha = 0.8) +
+  theme_minimal() +
+  labs(
+    title = "Répartition des sexes par groupe",
+    x = "Groupe",
+    y = "Nombre d'enfants",
+    fill = "Sexe"
+  )
+
+print(plot_sexe)
+```
+
+####  Les Courbes de Densité (Density plots) 
+
+```{r}
+plot_densite <- ggplot(df, aes(x = Aire_YO, fill = Sujets)) +
+  geom_density(alpha = 0.5) +
+  theme_minimal() +
+  labs(
+    title = "Distribution de l'Aire d'oscillation (Yeux Ouverts)",
+    x = "Aire (mm²)",
+    y = "Densité de probabilité"
+  ) +
+  scale_fill_manual(values = c("TD" = "#76669BFF", "TSA" = "#F2994EFF"))
+
+print(plot_densite)
+```
+
+#### Les boxplots :
+
+Pour éviter la redondance dans notre code et limiter les erreurs, nous avons développé une fonction automatisée sous R. Cette fonction réalise trois opérations clés : 
+
+-   **Filtrage et restructuration :** Elle isole toutes les variables d'une même famille (ex: préfixe Aire\_) et transforme les données en format long pour les adapter à la visualisation. 
+
+<!-- -->
+
+-   **Nettoyage et ordonnancement :** Elle supprime les préfixes pour alléger la lecture et force un affichage logique respectant la difficulté croissante des conditions expérimentales : Yeux Ouverts (YO), Yeux Fermés (YF), puis Mousse (MO). 
+
+<!-- -->
+
+-   **Génération graphique :** Elle crée une figure composée de trois boîtes à moustaches (boxplots) juxtaposées, permettant d'observer simultanément l'effet du groupe (TD vs TSA) et l'effet de la condition sensorielle. 
+
+La voila :
+
+```{r}
+generer_boxplots_famille <- function(data, prefixe_variable, unite_y, titre_graphique) {
+  
+  # Transformation des données (format long) en ciblant le préfixe
+  df_filtre <- data %>%
+    select(Sujets, starts_with(prefixe_variable)) %>% 
+    pivot_longer(cols = -Sujets, names_to = "Condition", values_to = "Valeur")
+  
+  # Nettoyage et forçage de l'ordre
+  df_filtre <- df_filtre %>%
+    mutate(Condition = sub(prefixe_variable, "", Condition)) %>%
+    mutate(Condition = factor(Condition, levels = c("YO", "YF", "MO")))
+  
+  # Création du graphique
+  graphique <- ggplot(df_filtre, aes(x = Sujets, y = Valeur, fill = Sujets)) +
+    geom_boxplot(alpha = 0.7, outlier.colour = "#B81840FF", outlier.shape = 8) +
+    facet_wrap(~ Condition, scales = "free_y") + 
+    theme_minimal() +
+    labs(
+      title = titre_graphique,
+      x = "Groupe d'enfants",
+      y = unite_y
+    ) +
+    scale_fill_manual(values = c("TD" = "#76669BFF", "TSA" = "#F2994EFF")) +
+    theme(
+      legend.position = "none",
+      strip.text = element_text(size = 10, face = "bold")
+    )
+  
+  return(graphique)
+}
+```
+
+Utilisons maintenant cette fonction sur nos variables :
+
+```{r}
+df <- data_appariement
+
+# Pour la famille des AIRES ("Aire_YO", "Aire_YF", "Aire_MO")
+plot_aires <- generer_boxplots_famille(
+  data = df, 
+  prefixe_variable = "Aire_", 
+  unite_y = "Aire (mm²)", 
+  titre_graphique = "Comparaison de l'Aire d'oscillation (TD vs TSA)"
+)
+print(plot_aires)
+
+# Pour la famille des VITESSES ("Vm_YO", "Vm_YF", "Vm_MO")
+plot_vitesses <- generer_boxplots_famille(
+  data = df, 
+  prefixe_variable = "Vm_", 
+  unite_y = "Vitesse", 
+  titre_graphique = "Comparaison de la Vitesse Moyenne (TD vs TSA)"
+)
+print(plot_vitesses)
+
+# Pour la famille des AMPLITUDES AP ("APRoM_YO", "APRoM_YF", "APRoM_MO")
+plot_aprom <- generer_boxplots_famille(
+  data = df, 
+  prefixe_variable = "APRoM_", 
+  unite_y = "Amplitude AP (mm)", 
+  titre_graphique = "Comparaison de l'Amplitude Postéro-Antérieure (TD vs TSA)"
+)
+print(plot_aprom)
+
+#----------------------
+
+# Amplitude Médio-Latérale (MLRoM)
+plot_mlrom <- generer_boxplots_famille(df, "MLRoM_", "Amplitude ML (mm)", "Amplitude Médio-Latérale (TD vs TSA)")
+print(plot_mlrom)
+
+# Excursion du Centre de Pression (CoPexc)
+plot_copexc <- generer_boxplots_famille(df, "CoPexc_", "Excursion CoP", "Excursion du Centre de Pression (TD vs TSA)")
+print(plot_copexc)
+
+# Ratio d'excursion (Ratio_exc)
+plot_ratio_exc <- generer_boxplots_famille(df, "Ratio_exc_", "Ratio", "Ratio d'Excursion (TD vs TSA)")
+print(plot_ratio_exc)
+
+# Angle theta (theta)
+plot_theta <- generer_boxplots_famille(df, "theta_", "Angle (°)", "Angle Theta d'oscillation (TD vs TSA)")
+print(plot_theta)
+
+#----------------------
+
+# Fréquence Médiane Antéro-Postérieure
+plot_fmed_ap <- generer_boxplots_famille(df, "Fmed_ap_", "Fréquence (Hz)", "Fréquence Médiane Antéro-Postérieure (TD vs TSA)")
+print(plot_fmed_ap)
+
+# Fréquence Médiane Médio-Latérale
+plot_fmed_ml <- generer_boxplots_famille(df, "Fmed_ml_", "Fréquence (Hz)", "Fréquence Médiane Médio-Latérale (TD vs TSA)")
+print(plot_fmed_ml)
+
+#-----------------------
+
+# RMS Antéro-Postérieur
+plot_rms_ap <- generer_boxplots_famille(df, "RMS_ap_", "RMS AP", "Dispersion RMS Antéro-Postérieure (TD vs TSA)")
+print(plot_rms_ap)
+
+# RMS Médio-Latéral
+plot_rms_ml <- generer_boxplots_famille(df, "RMS_ml_", "RMS ML", "Dispersion RMS Médio-Latérale (TD vs TSA)")
+print(plot_rms_ml)
+
+# RMSr Antéro-Postérieur (Composante Rambling/Résiduelle AP)
+plot_rmsr_ap <- generer_boxplots_famille(
+  data = df, 
+  prefixe_variable = "RMSr_ap_", 
+  unite_y = "RMSr AP", 
+  titre_graphique = "Dispersion RMSr Antéro-Postérieure (TD vs TSA)"
+)
+print(plot_rmsr_ap)
+
+# RMSr Médio-Latéral (Composante Rambling/Résiduelle ML)
+plot_rmsr_ml <- generer_boxplots_famille(
+  data = df, 
+  prefixe_variable = "RMSr_ml_", 
+  unite_y = "RMSr ML", 
+  titre_graphique = "Dispersion RMSr Médio-Latérale (TD vs TSA)"
+)
+print(plot_rmsr_ml)
+
+# RMSt Antéro-Postérieur (Composante Trembling AP)
+plot_rmst_ap <- generer_boxplots_famille(
+  data = df, 
+  prefixe_variable = "RMSt_ap_", 
+  unite_y = "RMSt AP", 
+  titre_graphique = "Dispersion RMSt Antéro-Postérieure (TD vs TSA)"
+)
+print(plot_rmst_ap)
+
+# RMSt Médio-Latéral (Composante Trembling ML)
+plot_rmst_ml <- generer_boxplots_famille(
+  data = df, 
+  prefixe_variable = "RMSt_ml_", 
+  unite_y = "RMSt ML", 
+  titre_graphique = "Dispersion RMSt Médio-Latérale (TD vs TSA)"
+)
+print(plot_rmst_ml)
+
+#-------------------------
+
+# Sample Entropy (Sen)
+plot_sen_ap <- generer_boxplots_famille(df, "Sen_ap_", "Entropie", "Sample Entropy Antéro-Postérieure (TD vs TSA)")
+print(plot_sen_ap)
+
+plot_sen_ml <- generer_boxplots_famille(df, "Sen_ml_", "Entropie", "Sample Entropy Médio-Latérale (TD vs TSA)")
+print(plot_sen_ml)
+
+#-----------------------
+
+# DFA (Detrended Fluctuation Analysis)
+plot_dfa_ap <- generer_boxplots_famille(df, "DFA_ap_", "Index DFA", "Index DFA Antéro-Postérieur (TD vs TSA)")
+print(plot_dfa_ap)
+
+plot_dfa_ml <- generer_boxplots_famille(df, "DFA_ml_", "Index DFA", "Index DFA Médio-Latéral (TD vs TSA)")
+print(plot_dfa_ml)
+
+#-----------------------
+
+# Déterminisme (DET)
+plot_det_ap <- generer_boxplots_famille(df, "DET_ap_", "Déterminisme (%)", "Déterminisme Antéro-Postérieur (TD vs TSA)")
+print(plot_det_ap)
+
+plot_det_ml <- generer_boxplots_famille(df, "DET_ml_", "Déterminisme (%)", "Déterminisme Médio-Latéral (TD vs TSA)")
+print(plot_det_ml)
+
+#----------------------
+
+# Laminarité (LAM)
+plot_lam_ap <- generer_boxplots_famille(df, "LAM_ap_", "Laminarité (%)", "Laminarité Antéro-Postérieure (TD vs TSA)")
+print(plot_lam_ap)
+
+plot_lam_ml <- generer_boxplots_famille(df, "LAM_ml_", "Laminarité (%)", "Laminarité Médio-Latérale (TD vs TSA)")
+print(plot_lam_ml)
+
+#---------------------
+
+# Longueur moyenne des lignes (MeanL)
+plot_meanl_ap <- generer_boxplots_famille(df, "MeanL_ap_", "MeanL", "Longueur Moy. Lignes Antéro-Postérieure (TD vs TSA)")
+print(plot_meanl_ap)
+
+plot_meanl_ml <- generer_boxplots_famille(df, "MeanL_ml_", "MeanL", "Longueur Moy. Lignes Médio-Latérale (TD vs TSA)")
+print(plot_meanl_ml)
+
+#---------------------
+
+# Longueur max des lignes (MaxL)
+plot_maxl_ap <- generer_boxplots_famille(df, "MaxL_ap_", "MaxL", "Longueur Max. Lignes Antéro-Postérieure (TD vs TSA)")
+print(plot_maxl_ap)
+
+plot_maxl_ml <- generer_boxplots_famille(df, "MaxL_ml_", "MaxL", "Longueur Max. Lignes Médio-Latérale (TD vs TSA)")
+print(plot_maxl_ml)
+```
+
+Nettoyage de l'environnement :
+
+```{r}
+rm(list = c("df", "df_long", "df_sexe", "tableau_descriptif", "plot_aires", "plot_appariement", "plot_aprom", "plot_copexc", "plot_densite", "plot_det_ap", "plot_det_ml", "plot_dfa_ap", "plot_dfa_ml", "plot_fmed_ap", "plot_fmed_ml", "plot_lam_ap", "plot_lam_ml", "plot_maxl_ap", "plot_maxl_ml", "plot_meanl_ap", "plot_meanl_ml", "plot_mlrom", "plot_ratio_exc", "plot_rms_ap", "plot_rms_ml", "plot_rmsr_ap", "plot_rmsr_ml", "plot_rmst_ap", "plot_rmst_ml", "plot_sen_ap", "plot_sen_ml", "plot_sexe", "plot_theta", "plot_toutes_variables", "plot_vitesses", "generer_boxplots_famille"))
 ```
