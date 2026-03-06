@@ -41,47 +41,60 @@ table_TSA <- DataPosturo %>%
 Créons la fonction permettant de réaliser les appariements :
 
 ```{r}
-appariement <- function(data1, data2, max_pairs = 20, caliper = 2) {
-
-  X1 <- as.matrix(data1[, c("Age","Poids","Taille")])
-  X2 <- as.matrix(data2[, c("Age","Poids","Taille")])
+appariement <- function(df1, df2, n_cible = 20) {
+  
+  # A. Préparation
+  d1 <- as.data.frame(df1)
+  d2 <- as.data.frame(df2)
+  rownames(d1) <- NULL
+  rownames(d2) <- NULL
+  
+  cols <- c("Age", "Poids", "Taille")
+  X1 <- as.matrix(d1[, cols])
+  X2 <- as.matrix(d2[, cols])
+  
+  # B. Covariance robuste
   S <- cov(rbind(X1, X2))
+  if(det(S) < 1e-10) S <- S + diag(0.01, ncol(S)) 
+
+  # C. Calcul des combinaisons (24x24 = 576)
+  dist_list <- expand.grid(i = 1:nrow(d1), j = 1:nrow(d2))
   
-  distance_matrix <- matrix(NA, nrow = nrow(X1), ncol = nrow(X2))
-  for(i in 1:nrow(X1)){
-    for(j in 1:ncol(distance_matrix)){
-      distance_matrix[i,j] <- mahalanobis(X1[i,], X2[j,], S)
-    }
-  }
+  dist_list$d <- apply(dist_list, 1, function(row) {
+    val <- try(mahalanobis(X1[row[1],], X2[row[2],], S), silent = TRUE)
+    if(inherits(val, "try-error") | is.na(val)) return(999999) else return(val)
+  })
   
+  # D. Tri
+  dist_list <- dist_list[order(dist_list$d), ]
+  
+  # E. Sélection 1 pour 1
   matches <- data.frame()
+  pris_i <- c()
+  pris_j <- c()
   
-  for(i in 1:nrow(distance_matrix)){
-    for(j in 1:ncol(distance_matrix)){
-      d <- distance_matrix[i,j]
-      if(d <= caliper){
-        new_row <- cbind(data1[i,], data2[j,], Distance = d)
-        # Renommer pour éviter les doublons
-        names(new_row) <- c(paste0(names(data1), "_NT"),
-                            paste0(names(data2), "_TSA"),
-                            "Distance")
-        
-        if(nrow(matches) < max_pairs){
-          matches <- rbind(matches, new_row)
-        } else {
-          max_current <- max(matches$Distance)
-          if(d < max_current){
-            idx_remove <- which.max(matches$Distance)
-            matches[idx_remove, ] <- new_row
-          }
-        }
-      }
+  for(k in 1:nrow(dist_list)) {
+    idx_i <- dist_list$i[k]
+    idx_j <- dist_list$j[k]
+    
+    if(!(idx_i %in% pris_i) && !(idx_j %in% pris_j)) {
+      # On garde les colonnes originales pour le moment
+      ligne_paire <- cbind(d1[idx_i, ], d2[idx_j, ], Dist_Mahalanobis = dist_list$d[k])
+      matches <- rbind(matches, ligne_paire)
+      
+      pris_i <- c(pris_i, idx_i)
+      pris_j <- c(pris_j, idx_j)
     }
+    
+    if(nrow(matches) == n_cible) break
   }
   
-  matches <- matches[order(matches$Distance), ]
-  
-  # --- Déplier en 2 lignes par match ---
+  # F. Renommage et Formatage Long
+  # On utilise directement les noms créés par cbind (souvent .1 pour d2)
+  # Pour être plus sûr, on définit les noms de colonnes explicitement
+  names(matches) <- c(paste0(names(d1), "_NT"), paste0(names(d2), "_TSA"), "Dist_Mahalanobis")
+
+  # --- Passage en format long (40 lignes) ---
   matches_long <- bind_rows(
     matches %>%
       transmute(
@@ -90,7 +103,9 @@ appariement <- function(data1, data2, max_pairs = 20, caliper = 2) {
         Age = Age_NT,
         Poids = Poids_NT,
         Taille = Taille_NT,
-        Compatibilite = Names_TSA
+        Groupe = "NT",
+        Compatibilite = Names_TSA,
+        Distance = Dist_Mahalanobis
       ),
     matches %>%
       transmute(
@@ -99,7 +114,9 @@ appariement <- function(data1, data2, max_pairs = 20, caliper = 2) {
         Age = Age_TSA,
         Poids = Poids_TSA,
         Taille = Taille_TSA,
-        Compatibilite = Names_NT
+        Groupe = "TSA",
+        Compatibilite = Names_NT,
+        Distance = Dist_Mahalanobis
       )
   )
   
@@ -111,8 +128,9 @@ Appliquons cette dernière à nos données :
 
 ```{r}
 table_appariement <- appariement(table_NT, table_TSA)
-dim(table_appariement)  # 40 lignes si 20 matches
-head(table_appariement)
+
+# dim(table_appariement)  # 40 lignes si 20 matches
+# head(table_appariement)
 ```
 
 #### Vérifiez ensuite cet appariement.
@@ -120,6 +138,7 @@ head(table_appariement)
 ##### Analyse descriptive
 
 ```{r}
+#library(dplyr)
 vars <- c("Age", "Taille", "Poids")
 
 table_appariement$Age    <- as.numeric(as.character(table_appariement$Age))
@@ -240,10 +259,21 @@ print(figure_finale)
 Nettoyage de l'environnement :
 
 ```{r}
-rm(list = c("table_NT", "table_TSA", "appariement", "figure_finale", "p1", "p2", "p3", "analyser_variable", "calc_smd", "creer_plot_appariement", "resultats_finaux", "desc_stats", "vars"))
+rm(list = c("figure_finale", "p1", "p2", "p3", "analyser_variable", "calc_smd", "creer_plot_appariement", "resultats_finaux", "desc_stats", "vars"))
 ```
 
 ### **Q2.2 Assurez-vous qu’il n’y a pas d’anomalies dans les données recueillies.**
+
+Création table data_appariement enfant :
+
+```{r}
+list_name <- (table_appariement$Names)
+
+data_appariement <- DataPosturo %>%
+  filter( Names %in% list_name)
+
+
+```
 
 #### Vérification des données
 
@@ -304,8 +334,7 @@ count_extremum_df <- function(data) {
   sum(sapply(extremum_list, function(x) x$n_extremum))
 }
 
-count_extremum_df(table_appariement)              #retourne le nombre de valeurs                                                                                aberrantes totales
-count_extremum_df(DataPosturo)
+count_extremum_df(DataPosturo)              #retourne le nombre de valeurs                                                                                aberrantes totales
 ```
 
 #### Correction des valeurs aberrantes :
@@ -335,7 +364,7 @@ remove_extremum_df <- function(data) {
   return(data_clean)
 }
 
-data_clean <- remove_extremum_df(table_appariement)
+data_clean <- remove_extremum_df(DataPosturo)
 count_extremum_df(data_clean)
 ```
 
