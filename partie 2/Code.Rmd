@@ -2,6 +2,8 @@
 title: "Etude de cas _ Partie 2"
 output: html_document
 date: "2026-03-04"
+editor_options: 
+  chunk_output_type: console
 ---
 
 ## **Analyse de la posture chez des enfants âgés de 6 à 12ans, neurotypiques et atteints de trouble du spectre de l’autisme : Deuxième partie : effet du TSA**
@@ -334,6 +336,121 @@ count_extremum_df <- function(data) {
 count_extremum_df(data_appariement)
 ```
 
+##### Detail des valeurs aberrante : 
+
+Commençons par créer une fonction permettant d'extraire les détails des valeurs aberrantes, ce qui nous aideras à justifier et developper notre analyse dans notre rapport.
+
+```{r}
+identifier_anomalies_details <- function(data, col_name) {
+  x <- data[[col_name]]
+  
+  # Vérification du type (si non numérique là où attendu)
+  if (!is.numeric(x)) {
+    return(data.frame(
+      Names = data$Names,
+      Variable = col_name,
+      Valeur = as.character(x),
+      Cause = "Mauvais type (non numérique)",
+      Borne_Inf = NA,
+      Borne_Sup = NA
+    ))
+  }
+  
+  # Calcul des bornes de Tukey
+  Q1 <- quantile(x, 0.25, na.rm = TRUE)
+  Q3 <- quantile(x, 0.75, na.rm = TRUE)
+  IQR_val <- Q3 - Q1
+  borne_inf <- Q1 - 1.5 * IQR_val
+  borne_sup <- Q3 + 1.5 * IQR_val
+  
+  # Identification
+  outliers_mask <- !is.na(x) & (x < borne_inf | x > borne_sup)
+  
+  if (any(outliers_mask)) {
+    df_outliers <- data[outliers_mask, ]
+    return(data.frame(
+      Names = df_outliers$Names,
+      Sujets = df_outliers$Sujets,
+      Variable = col_name,
+      Valeur = x[outliers_mask],
+      Cause = ifelse(x[outliers_mask] > borne_sup, "> borne haute", "< borne basse"),
+      Borne_Inf = round(borne_inf, 2),
+      Borne_Sup = round(borne_sup, 2)
+    ))
+  } else {
+    return(NULL)
+  }
+}
+```
+
+Appliquons maintenant cette fonction sur toutes les colonnes numériques de data_appariement
+
+```{r}
+cols_a_tester <- data_appariement %>% select(where(is.numeric)) %>% names()
+
+liste_anomalies <- lapply(cols_a_tester, function(cn) {
+  identifier_anomalies_details(data_appariement, cn)
+})
+
+# Fusion des résultats dans un seul tableau
+tableau_anomalies <- do.call(rbind, liste_anomalies)
+
+# Affichage du tableau
+print(tableau_anomalies)
+dim(tableau_anomalies)
+
+# Exportation pour vérification manuelle
+#write.csv(tableau_anomalies, "Tableau_Anomalies_Posturo.csv", row.names = FALSE)
+```
+
+##### Illustration des anomalies : 
+
+Causes d'anomalies (colorées par groupe (TD, TSA))
+
+```{r}
+plot_cause_groupe <- ggplot(tableau_anomalies, aes(x = Cause, fill = Sujets)) +
+  geom_bar(position = "dodge", color = "black", width = 0.7) +
+  theme_minimal() +
+  labs(title = "Répartition des types de valeurs aberrantes selon le groupe",
+       subtitle = "Le groupe TSA présente une nette majorité de valeurs supérieures aux bornes",
+       x = "Type de dépassement (Cause)",
+       y = "Nombre d'anomalies",
+       fill = "Groupe") +
+  scale_fill_manual(values = c("TD" = "#76669BFF", "TSA" = "#F2994EFF")) + # Bleu pour TD, Orange pour TSA
+  theme(plot.title = element_text(face = "bold"))
+
+print(plot_cause_groupe)
+```
+
+Top 10 des variables les plus touchées colorées par Groupe
+
+```{r}
+# On identifie le nom des 10 variables avec le plus d'anomalies
+top_10_noms <- tableau_anomalies %>%
+  count(Variable, sort = TRUE) %>%
+  head(10) %>%
+  pull(Variable)
+
+# On filtre le tableau original pour ne garder que ces 10 variables
+tableau_top_10 <- tableau_anomalies %>%
+  filter(Variable %in% top_10_noms)
+
+# Création du graphique en barres empilées
+plot_top_vars_groupe <- ggplot(tableau_top_10, aes(x = factor(Variable, levels = rev(top_10_noms)), fill = Sujets)) +
+  geom_bar(color = "black") +
+  coord_flip() + # Mise à l'horizontale
+  theme_minimal() +
+  labs(title = "Top 10 des variables concentrant le plus d'anomalies",
+       subtitle = "Proportion d'anomalies issues du groupe TSA vs TD",
+       x = "Variables posturales",
+       y = "Nombre total d'anomalies",
+       fill = "Groupe") +
+  scale_fill_manual(values = c("TD" = "#76669BFF", "TSA" = "#F2994EFF")) +
+  theme(plot.title = element_text(face = "bold"))
+
+print(plot_top_vars_groupe)
+```
+
 #### Correction des valeurs aberrantes :
 
 Maintenant que l'on sais comment trouver les valeurs aberrantes, on peut les remplacer par des valeurs inexistante via la fonction suivante :
@@ -370,7 +487,59 @@ On obtiens ainsi *data_clean*, le nouveau tableau avec les données "nettoyer", 
 Nettoyage de l'environnement :
 
 ```{r}
-rm(list = c("count_extremum_df", "find_extremum", "find_extremum_df", "remove_extremum_df"))
+rm(list = c("count_extremum_df", "find_extremum", "find_extremum_df", "remove_extremum_df", "liste_anomalies", "tableau_anomalies", "cols_a_tester", "list_name", "identifier_anomalies_details"))
+```
+
+#### Illustration complementaire 
+
+##### Boxplots Avant / Après pour le Top 10 des variables
+
+On récupère automatiquement le nom des 10 variables avec le plus d'anomalies et on prépare un tableau vide pour stocker les données du graphique
+
+```{r}
+top_10_noms <- tableau_anomalies %>%
+  count(Variable, sort = TRUE) %>%
+  head(10) %>%
+  pull(Variable)
+
+df_boxplot_top10 <- data.frame()
+```
+
+On fait une boucle pour calculer l'"Avant/Après" de ces 10 variables et on ajoute au tableau global
+
+```{r}
+for (var in top_10_noms) {
+  valeurs_avant <- data_appariement[[var]]
+  valeurs_apres <- data_clean[[var]]
+  
+  df_temp <- data.frame(
+    Variable = var,
+    Statut = rep(c("1. Avant (Brut)", "2. Après (Winsorisé)"), each = nrow(data_appariement)),
+    Valeurs = c(valeurs_avant, valeurs_apres)
+  )
+  
+  df_boxplot_top10 <- rbind(df_boxplot_top10, df_temp)
+}
+```
+
+Création du graphique en mosaïque (facet_wrap)
+
+```{r}
+plot_boxplot_top10 <- ggplot(df_boxplot_top10, aes(x = Statut, y = Valeurs, fill = Statut)) +
+  geom_boxplot(outlier.colour = "#B81840FF", outlier.shape = 16, outlier.size = 1.5, alpha = 0.8) +
+  facet_wrap(~ Variable, scales = "free_y", ncol = 5) + 
+  theme_minimal() +
+  labs(title = "Effet de la winsorisation sur le Top 10 des variables avec le plus de valeurs extrêmes",
+       x = "",
+       y = "Valeurs mesurées (échelles indépendantes)") +
+  scale_fill_manual(values = c("1. Avant (Brut)" = "#76669BFF", "2. Après (Winsorisé)" = "#F2994EFF")) +
+  theme(legend.position = "bottom",
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.text = element_text(face = "bold", size = 10)) # Met en gras le nom de la variable
+
+# Affichage du graphique
+print(plot_boxplot_top10)
 ```
 
 ### Q2.3 Proposez des tableaux et graphiques pour synthétiser ces données descriptives. N’oubliez pas de bien expliquer et justifier les choix que vous faites.
@@ -450,13 +619,7 @@ print(plot_densite)
 Pour éviter la redondance dans notre code et limiter les erreurs, nous avons développé une fonction automatisée sous R. Cette fonction réalise trois opérations clés : 
 
 -   **Filtrage et restructuration :** Elle isole toutes les variables d'une même famille (ex: préfixe Aire\_) et transforme les données en format long pour les adapter à la visualisation. 
-
-<!-- -->
-
--   **Nettoyage et ordonnancement :** Elle supprime les préfixes pour alléger la lecture et force un affichage logique respectant la difficulté croissante des conditions expérimentales : Yeux Ouverts (YO), Yeux Fermés (YF), puis Mousse (MO). 
-
-<!-- -->
-
+-   **Nettoyage et ordonnancement :** Elle supprime les préfixes pour alléger la lecture et force un affichage logique respectant la difficulté croissante des conditions expérimentales : Yeux Ouverts (YO), Yeux Fermés (YF), puis Mousse (MO).
 -   **Génération graphique :** Elle crée une figure composée de trois boîtes à moustaches (boxplots) juxtaposées, permettant d'observer simultanément l'effet du groupe (TD vs TSA) et l'effet de la condition sensorielle. 
 
 La voila :
