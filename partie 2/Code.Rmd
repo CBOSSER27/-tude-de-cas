@@ -285,8 +285,8 @@ find_extremum <- function(data, col) {
   Q1 <- quantile(x, 0.25, na.rm = TRUE)
   Q3 <- quantile(x, 0.75, na.rm = TRUE)
   
-  maxi <- min(max(x, na.rm = TRUE), Q3 + 1.5 * (Q3 - Q1))
-  mini <- max(min(x, na.rm = TRUE), Q1 - 1.5 * (Q3 - Q1))
+  maxi <- min(max(x, na.rm = TRUE), Q3 + 3 * (Q3 - Q1))
+  mini <- max(min(x, na.rm = TRUE), Q1 - 3 * (Q3 - Q1))
   
   extremum <- x[x < mini | x > maxi]
   
@@ -336,7 +336,7 @@ count_extremum_df <- function(data) {
 count_extremum_df(data_appariement)
 ```
 
-##### Detail des valeurs aberrante : 
+##### Detail des valeurs aberrante :
 
 Commençons par créer une fonction permettant d'extraire les détails des valeurs aberrantes, ce qui nous aideras à justifier et developper notre analyse dans notre rapport.
 
@@ -360,8 +360,8 @@ identifier_anomalies_details <- function(data, col_name) {
   Q1 <- quantile(x, 0.25, na.rm = TRUE)
   Q3 <- quantile(x, 0.75, na.rm = TRUE)
   IQR_val <- Q3 - Q1
-  borne_inf <- Q1 - 1.5 * IQR_val
-  borne_sup <- Q3 + 1.5 * IQR_val
+  borne_inf <- Q1 - 3 * IQR_val
+  borne_sup <- Q3 + 3 * IQR_val
   
   # Identification
   outliers_mask <- !is.na(x) & (x < borne_inf | x > borne_sup)
@@ -403,7 +403,7 @@ dim(tableau_anomalies)
 #write.csv(tableau_anomalies, "Tableau_Anomalies_Posturo.csv", row.names = FALSE)
 ```
 
-##### Illustration des anomalies : 
+##### Illustration des anomalies :
 
 Causes d'anomalies (colorées par groupe (TD, TSA))
 
@@ -482,15 +482,9 @@ data_clean <- remove_extremum_df(data_appariement)
 count_extremum_df(data_clean)
 ```
 
-On obtiens ainsi *data_clean*, le nouveau tableau avec les données "nettoyer", c'est-à-dire que nous avons *traitées les valeurs aberrantes par "winsorisation". Les observations inférieures à la borne basse (Q1 − 1,5×IQR) ont été remplacées par cette borne, et celles supérieures à la borne haute (Q3 + 1,5×IQR) ont été remplacées par la borne correspondante. Cette approche permet de limiter l'influence des valeurs extrêmes tout en conservant l'ensemble des données. Pour prendre cette décision, nous avons d'abord testé le remplacement des valeurs aberrantes par la moyenne, puis par la médiane. Cependant, avec ces deux méthodes, certaines valeurs aberrantes subsistaient encore dans le dataset.*
+On obtiens ainsi *data_clean*, le nouveau tableau avec les données "nettoyer", c'est-à-dire que nous avons *traitées les valeurs aberrantes par "winsorisation". Les observations inférieures à la borne basse (Q1 − 3×IQR) ont été remplacées par cette borne, et celles supérieures à la borne haute (Q3 + 3×IQR) ont été remplacées par la borne correspondante. Cette approche permet de limiter l'influence des valeurs extrêmes tout en conservant l'ensemble des données. Pour prendre cette décision, nous avons d'abord testé le remplacement des valeurs aberrantes par la moyenne, puis par la médiane. Cependant, avec ces deux méthodes, certaines valeurs aberrantes subsistaient encore dans le dataset.*
 
-Nettoyage de l'environnement :
-
-```{r}
-rm(list = c("count_extremum_df", "find_extremum", "find_extremum_df", "remove_extremum_df", "liste_anomalies", "tableau_anomalies", "cols_a_tester", "list_name", "identifier_anomalies_details"))
-```
-
-#### Illustration complementaire 
+#### Illustration complementaire
 
 ##### Boxplots Avant / Après pour le Top 10 des variables
 
@@ -540,6 +534,10 @@ plot_boxplot_top10 <- ggplot(df_boxplot_top10, aes(x = Statut, y = Valeurs, fill
 
 # Affichage du graphique
 print(plot_boxplot_top10)
+```
+
+```{r}
+rm(list = c("count_extremum_df", "find_extremum", "find_extremum_df", "remove_extremum_df", "liste_anomalies", "tableau_anomalies", "cols_a_tester", "list_name", "identifier_anomalies_details"))
 ```
 
 ### Q2.3 Proposez des tableaux et graphiques pour synthétiser ces données descriptives. N’oubliez pas de bien expliquer et justifier les choix que vous faites.
