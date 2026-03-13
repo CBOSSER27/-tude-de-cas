@@ -821,3 +821,48 @@ Nettoyage de l'environnement :
 ```{r}
 rm(list = c("df", "df_long", "df_sexe", "tableau_descriptif", "plot_aires", "plot_appariement", "plot_aprom", "plot_copexc", "plot_densite", "plot_det_ap", "plot_det_ml", "plot_dfa_ap", "plot_dfa_ml", "plot_fmed_ap", "plot_fmed_ml", "plot_lam_ap", "plot_lam_ml", "plot_maxl_ap", "plot_maxl_ml", "plot_meanl_ap", "plot_meanl_ml", "plot_mlrom", "plot_ratio_exc", "plot_rms_ap", "plot_rms_ml", "plot_rmsr_ap", "plot_rmsr_ml", "plot_rmst_ap", "plot_rmst_ml", "plot_sen_ap", "plot_sen_ml", "plot_sexe", "plot_theta", "plot_toutes_variables", "plot_vitesses", "generer_boxplots_famille"))
 ```
+
+## **Q3.1 Quel test proposez-vous pour comparer les deux groupes d’enfants ?** 
+
+## **Vérifiez bien que vous pouvez appliquer ce test à vos données. Appliquez le test à vos données et présentez les résultats (tableaux et graphiques).**
+
+Fonction qui choisit le bon test automatiquement :
+
+Dans la partie "choix et application du test", on procède ainsi : si les deux groupes suivent une loi normale (selon le test de Shapiro-Wilk), alors on peut utiliser un test de Student. Sinon, on utilise le test de Mann-Whitney.
+
+```{r}
+
+choix_test_stats <- function(valeur, groupe) {
+  g1 <- valeur[groupe == "TD"]
+  g2 <- valeur[groupe == "TSA"]
+  
+  #Test de Normalité (Shapiro-Wilk)
+  norm_g1 <- shapiro.test(g1)$p.value > 0.05
+  norm_g2 <- shapiro.test(g2)$p.value > 0.05
+  
+  #Choix et Application du Test
+  if (norm_g1 & norm_g2) {         
+    res <- t.test(valeur ~ groupe, var.equal = TRUE)
+    type_test <- "Student (T-test)"
+  } else {                        
+    res <- wilcox.test(valeur ~ groupe)
+    type_test <- "Mann-Whitney"
+  }
+  
+  return(data.frame(
+    Test_Utilise = type_test,
+    P_Value = round(res$p.value, 4),
+    Significatif = if_else(res$p.value < 0.05, "OUI", "NON")
+  ))
+}
+```
+
+On utilise maintenant la fonction sur nos données :
+
+```{r}
+resultats_tests <- data_clean %>%
+  select(2:16) %>%
+  pivot_longer(cols = -Sujets, names_to = "Variable", values_to = "Valeur") %>%
+  group_by(Variable) %>%
+  do(choix_test_stats(.$Valeur, .$Sujets))
+```
