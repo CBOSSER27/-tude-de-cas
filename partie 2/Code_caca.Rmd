@@ -1,0 +1,890 @@
+---
+title: "Etude de cas _ Partie 2"
+output: html_document
+date: "2026-03-04"
+editor_options: 
+  chunk_output_type: console
+---
+
+## **Analyse de la posture chez des enfants âgés de 6 à 12ans, neurotypiques et atteints de trouble du spectre de l’autisme : Deuxième partie : effet du TSA**
+
+Importation des librairies :
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(readxl)
+library(dplyr)
+library(patchwork)
+```
+
+```{r}
+DataPosturo <- read_excel("DataPosturo_P2.xlsx")
+summary(DataPosturo)
+```
+
+### **Q2.1 En fait, 40 enfants NT (neurotypiques) ont été analysés.** Parmi **cette population, 24 ont été choisis pour apparier en âge, taille et masse les enfants NT et TSA.**
+
+#### Comment peut on procéder pour effectuer cet appariement ?
+
+Pour commencer, preparons les tables NT et TSA :
+
+```{r}
+# Préparer les tables NT et TSA
+table_NT <- DataPosturo %>%
+  filter(Sujets == "TD") %>%
+  select(c("Names","Sujets","Age","Poids","Taille"))
+
+table_TSA <- DataPosturo %>%
+  filter(Sujets == "TSA") %>%
+  select(c("Names","Sujets","Age","Poids","Taille"))
+```
+
+Créons la fonction permettant de réaliser les appariements :
+
+```{r}
+appariement <- function(df1, df2, n_cible = 20) {
+  
+  # A. Préparation
+  d1 <- as.data.frame(df1)
+  d2 <- as.data.frame(df2)
+  rownames(d1) <- NULL
+  rownames(d2) <- NULL
+  
+  cols <- c("Age", "Poids", "Taille")
+  X1 <- as.matrix(d1[, cols])
+  X2 <- as.matrix(d2[, cols])
+  
+  # B. Covariance robuste
+  S <- cov(rbind(X1, X2))
+  if(det(S) < 1e-10) S <- S + diag(0.01, ncol(S)) 
+
+  # C. Calcul des combinaisons (24x24 = 576)
+  dist_list <- expand.grid(i = 1:nrow(d1), j = 1:nrow(d2))
+  
+  dist_list$d <- apply(dist_list, 1, function(row) {
+    val <- try(mahalanobis(X1[row[1],], X2[row[2],], S), silent = TRUE)
+    if(inherits(val, "try-error") | is.na(val)) return(999999) else return(val)
+  })
+  
+  # D. Tri
+  dist_list <- dist_list[order(dist_list$d), ]
+  
+  # E. Sélection 1 pour 1
+  matches <- data.frame()
+  pris_i <- c()
+  pris_j <- c()
+  
+  for(k in 1:nrow(dist_list)) {
+    idx_i <- dist_list$i[k]
+    idx_j <- dist_list$j[k]
+    
+    if(!(idx_i %in% pris_i) && !(idx_j %in% pris_j)) {
+      # On garde les colonnes originales pour le moment
+      ligne_paire <- cbind(d1[idx_i, ], d2[idx_j, ], Dist_Mahalanobis = dist_list$d[k])
+      matches <- rbind(matches, ligne_paire)
+      
+      pris_i <- c(pris_i, idx_i)
+      pris_j <- c(pris_j, idx_j)
+    }
+    
+    if(nrow(matches) == n_cible) break
+  }
+  
+  # F. Renommage et Formatage Long
+  # On utilise directement les noms créés par cbind (souvent .1 pour d2)
+  # Pour être plus sûr, on définit les noms de colonnes explicitement
+  names(matches) <- c(paste0(names(d1), "_NT"), paste0(names(d2), "_TSA"), "Dist_Mahalanobis")
+
+  # --- Passage en format long (40 lignes) ---
+  matches_long <- bind_rows(
+    matches %>%
+      transmute(
+        Names = Names_NT,
+        Sujets = Sujets_NT,
+        Age = Age_NT,
+        Poids = Poids_NT,
+        Taille = Taille_NT,
+        Groupe = "NT",
+        Compatibilite = Names_TSA,
+        Distance = Dist_Mahalanobis
+      ),
+    matches %>%
+      transmute(
+        Names = Names_TSA,
+        Sujets = Sujets_TSA,
+        Age = Age_TSA,
+        Poids = Poids_TSA,
+        Taille = Taille_TSA,
+        Groupe = "TSA",
+        Compatibilite = Names_NT,
+        Distance = Dist_Mahalanobis
+      )
+  )
+  
+  return(matches_long)
+}
+```
+
+Appliquons cette dernière à nos données :
+
+```{r}
+table_appariement <- appariement(table_NT, table_TSA)
+dim(table_appariement)  # 40 lignes si 20 matches
+head(table_appariement)
+```
+
+#### Vérifiez ensuite cet appariement.
+
+##### Analyse descriptive
+
+```{r}
+vars <- c("Age", "Taille", "Poids")
+
+table_appariement$Age    <- as.numeric(as.character(table_appariement$Age))
+table_appariement$Taille <- as.numeric(as.character(table_appariement$Taille))
+table_appariement$Poids  <- as.numeric(as.character(table_appariement$Poids))
+
+desc_stats <- table_appariement %>%
+  group_by(Sujets) %>%
+  summarise(across(all_of(vars), list(mean = mean, sd = sd)))
+print(desc_stats)
+```
+
+Fonction permettant de calculer le SMD :
+
+```{r}
+calc_smd <- function(v, d) {
+  g1 <- d[d$Sujets == "TSA", v]
+  g2 <- d[d$Sujets == "TD", v]
+  
+  g1 <- g1[!is.na(g1)]
+  g2 <- g2[!is.na(g2)]
+  
+  diff_moy <- mean(g1) - mean(g2)
+  sd_pool  <- sqrt((sd(g1)^2 + sd(g2)^2) / 2)
+  
+  return(abs(diff_moy / sd_pool))
+}
+```
+
+Valeurs du Standardized Mean Difference (SMD) :
+
+```{r}
+
+sapply(vars, calc_smd, d = table_appariement)
+```
+
+*Rappel* : Un SMD \< 0.1 ou 0.2 indique un excellent appariement.
+
+##### Analyse inférentielle :
+
+On commence par créer la fonction analyser_variable, qui permettra de savoir quel test utiliser selon la normalité ou non de la variable. Pour ce faire, on vas extraire les groupes (TSA, TD), faire un test de normalité sur ces derniers, et calculer la p-value du test considéré adequat.
+
+```{r}
+analyser_variable <- function(var, df) {
+  g_TSA <- df[[var]][df$Sujets == "TSA"]
+  g_TD  <- df[[var]][df$Sujets == "TD"]
+  
+  shapiro_tsa <- shapiro.test(g_TSA)$p.value
+  shapiro_td  <- shapiro.test(g_TD)$p.value
+  is_normal   <- (shapiro_tsa > 0.05 && shapiro_td > 0.05)
+  
+  if (is_normal) {
+    # Test de variance pour décider entre Student et Welch
+    p_var <- var.test(g_TSA, g_TD)$p.value
+    type_test <- if(p_var > 0.05) "Student" else "Welch"
+    res_test <- t.test(g_TSA, g_TD, var.equal = (p_var > 0.05))
+  } else {
+    type_test <- "Mann-Whitney"
+    res_test <- wilcox.test(g_TSA, g_TD)
+  }
+  
+  # Retourne un dataframe d'une ligne
+  data.frame(
+    Variable = var,
+    Shapiro_TSA = round(shapiro_tsa, 4),
+    Shapiro_TD = round(shapiro_td, 4),
+    Normalite = is_normal,
+    Test_Utilise = type_test,
+    P_Value = round(res_test$p.value, 4),
+    Appariement_OK = (res_test$p.value > 0.05)
+  )
+}
+```
+
+Utilisation de la fonction créer precedemment sur nos données :
+
+```{r}
+resultats_finaux <- do.call(rbind, lapply(vars, analyser_variable, df = table_appariement))
+
+print(resultats_finaux)
+```
+
+##### Illustration du résultat :
+
+```{r}
+creer_plot_appariement <- function(var_name, titre, unite) {
+  ggplot(table_appariement, aes(x = Sujets, y = .data[[var_name]], fill = Sujets)) +
+    geom_boxplot(alpha = 0.4, outlier.shape = NA, width = 0.5) +
+    geom_jitter(aes(color = Sujets), width = 0.15, alpha = 0.7, size = 2) +
+    stat_summary(fun = mean, geom = "point", shape = 4, size = 3, color = "#B81840FF", stroke = 1.5) +
+    
+    scale_fill_manual(values = c("TD" = "#76669BFF", "TSA" = "#F2994EFF")) +
+    scale_color_manual(values = c("TD" = "#76669BFF", "TSA" = "#F2994EFF")) +
+    labs(title = titre, y = paste(var_name, unite), x = "") +
+    theme_minimal() +
+    theme(legend.position = "none",
+          plot.title = element_text(face = "bold", hjust = 0.5),
+          panel.grid.minor = element_blank())
+}
+
+# Génération des trois graphiques
+p1 <- creer_plot_appariement("Age", "Âge des sujets", "(ans)")
+p2 <- creer_plot_appariement("Taille", "Taille des sujets", "(cm)")
+p3 <- creer_plot_appariement("Poids", "Masse des sujets", "(kg)")
+
+# Assemblage final
+figure_finale <- p1 + p2 + p3 + 
+  plot_annotation(title = "Vérification de la comparabilité des groupes après appariement",
+                  subtitle = "Les boîtes représentent les quartiles, les points le détail individuel, et les croix rouges les moyennes.",
+                  theme = theme(plot.title = element_text(size = 16, face = "bold")))
+
+print(figure_finale)
+
+# Sauvegarde pour le rapport
+# ggsave("Verification_Appariement.png", figure_finale, width = 12, height = 5, dpi = 300)
+```
+
+Nettoyage de l'environnement :
+
+```{r}
+rm(list = c("table_NT", "table_TSA", "appariement", "figure_finale", "p1", "p2", "p3", "analyser_variable", "calc_smd", "creer_plot_appariement", "resultats_finaux", "desc_stats", "vars"))
+```
+
+### **Q2.2 Assurez-vous qu’il n’y a pas d’anomalies dans les données recueillies.**
+
+Création table data_appariement enfant :
+
+```{r}
+list_name <- (table_appariement$Names)
+
+data_appariement <- DataPosturo %>%
+  filter( Names %in% list_name)
+```
+
+#### Vérification des données
+
+Fonction permettant de trouver les valeurs extremes dans une colonne :
+
+```{r}
+find_extremum <- function(data, col) {
+  
+  x <- data[[col]]
+  
+  Q1 <- quantile(x, 0.25, na.rm = TRUE)
+  Q3 <- quantile(x, 0.75, na.rm = TRUE)
+  
+  maxi <- min(max(x, na.rm = TRUE), Q3 + 3 * (Q3 - Q1))
+  mini <- max(min(x, na.rm = TRUE), Q1 - 3 * (Q3 - Q1))
+  
+  extremum <- x[x < mini | x > maxi]
+  
+  if (length(extremum) == 0) {              #pour que ce soit plus lisible
+    extremum <- NA
+  }
+  
+  list(
+    variable = col,
+    extremum = extremum,
+    n_extremum = sum(!is.na(extremum)),
+    mini = mini,
+    maxi = maxi
+  )
+}
+```
+
+Et maintenant, une fonction permettant de trouver les valeurs extremes dans un data-frame :
+
+```{r}
+find_extremum_df <- function(data) {
+  
+  num_cols <- sapply(data, is.numeric)
+  
+  extremum_list <- lapply(
+    names(data)[num_cols],                    #permet d'avoir le nom des                                                           colonnes numeriques
+    function(col) find_extremum(data, col)
+  )
+  
+  names(extremum_list) <- names(data)[num_cols]
+  
+  return(extremum_list)
+}
+```
+
+On a decider de le faire dans deux fonctions differentes, bien qu'on aurais pu le faire dans une meme fonction car on trouvais ça plus lisible.
+
+Laissons maintenant place a notre fonction *count_extremum_df* qui permet de calculer le nombre de valeur aberrante d'un data-frame donné en utilisant les fonctions definie ci-dessus.
+
+```{r}
+count_extremum_df <- function(data) {
+  extremum_list <- find_extremum_df(data)
+  sum(sapply(extremum_list, function(x) x$n_extremum))
+}
+
+# aberrantes totales
+count_extremum_df(data_appariement)
+```
+
+##### Detail des valeurs aberrante :
+
+Commençons par créer une fonction permettant d'extraire les détails des valeurs aberrantes, ce qui nous aideras à justifier et developper notre analyse dans notre rapport.
+
+```{r}
+identifier_anomalies_details <- function(data, col_name) {
+  x <- data[[col_name]]
+  
+  # Vérification du type (si non numérique là où attendu)
+  if (!is.numeric(x)) {
+    return(data.frame(
+      Names = data$Names,
+      Variable = col_name,
+      Valeur = as.character(x),
+      Cause = "Mauvais type (non numérique)",
+      Borne_Inf = NA,
+      Borne_Sup = NA
+    ))
+  }
+  
+  # Calcul des bornes de Tukey
+  Q1 <- quantile(x, 0.25, na.rm = TRUE)
+  Q3 <- quantile(x, 0.75, na.rm = TRUE)
+  IQR_val <- Q3 - Q1
+  borne_inf <- Q1 - 3 * IQR_val
+  borne_sup <- Q3 + 3 * IQR_val
+  
+  # Identification
+  outliers_mask <- !is.na(x) & (x < borne_inf | x > borne_sup)
+  
+  if (any(outliers_mask)) {
+    df_outliers <- data[outliers_mask, ]
+    return(data.frame(
+      Names = df_outliers$Names,
+      Sujets = df_outliers$Sujets,
+      Variable = col_name,
+      Valeur = x[outliers_mask],
+      Cause = ifelse(x[outliers_mask] > borne_sup, "> borne haute", "< borne basse"),
+      Borne_Inf = round(borne_inf, 2),
+      Borne_Sup = round(borne_sup, 2)
+    ))
+  } else {
+    return(NULL)
+  }
+}
+```
+
+Appliquons maintenant cette fonction sur toutes les colonnes numériques de data_appariement
+
+```{r}
+cols_a_tester <- data_appariement %>% select(where(is.numeric)) %>% names()
+
+liste_anomalies <- lapply(cols_a_tester, function(cn) {
+  identifier_anomalies_details(data_appariement, cn)
+})
+
+# Fusion des résultats dans un seul tableau
+tableau_anomalies <- do.call(rbind, liste_anomalies)
+
+# Affichage du tableau
+print(tableau_anomalies)
+dim(tableau_anomalies)
+
+# Exportation pour vérification manuelle
+#write.csv(tableau_anomalies, "Tableau_Anomalies_Posturo.csv", row.names = FALSE)
+```
+
+##### Illustration des anomalies :
+
+Causes d'anomalies (colorées par groupe (TD, TSA))
+
+```{r}
+plot_cause_groupe <- ggplot(tableau_anomalies, aes(x = Cause, fill = Sujets)) +
+  geom_bar(position = "dodge", color = "black", width = 0.7) +
+  theme_minimal() +
+  labs(title = "Répartition des types de valeurs aberrantes selon le groupe",
+       subtitle = "Le groupe TSA présente une nette majorité de valeurs supérieures aux bornes",
+       x = "Type de dépassement (Cause)",
+       y = "Nombre d'anomalies",
+       fill = "Groupe") +
+  scale_fill_manual(values = c("TD" = "#76669BFF", "TSA" = "#F2994EFF")) + # Bleu pour TD, Orange pour TSA
+  theme(plot.title = element_text(face = "bold"))
+
+print(plot_cause_groupe)
+```
+
+Top 10 des variables les plus touchées colorées par Groupe
+
+```{r}
+# On identifie le nom des 10 variables avec le plus d'anomalies
+top_10_noms <- tableau_anomalies %>%
+  count(Variable, sort = TRUE) %>%
+  head(10) %>%
+  pull(Variable)
+
+# On filtre le tableau original pour ne garder que ces 10 variables
+tableau_top_10 <- tableau_anomalies %>%
+  filter(Variable %in% top_10_noms)
+
+# Création du graphique en barres empilées
+plot_top_vars_groupe <- ggplot(tableau_top_10, aes(x = factor(Variable, levels = rev(top_10_noms)), fill = Sujets)) +
+  geom_bar(color = "black") +
+  coord_flip() + # Mise à l'horizontale
+  theme_minimal() +
+  labs(title = "Top 10 des variables concentrant le plus d'anomalies",
+       subtitle = "Proportion d'anomalies issues du groupe TSA vs TD",
+       x = "Variables posturales",
+       y = "Nombre total d'anomalies",
+       fill = "Groupe") +
+  scale_fill_manual(values = c("TD" = "#76669BFF", "TSA" = "#F2994EFF")) +
+  theme(plot.title = element_text(face = "bold"))
+
+print(plot_top_vars_groupe)
+```
+
+#### Correction des valeurs aberrantes :
+
+Maintenant que l'on sais comment trouver les valeurs aberrantes, on peut les remplacer par des valeurs inexistante via la fonction suivante :
+
+```{r}
+remove_extremum_df <- function(data) {
+  
+  data_clean <- data
+  extremum_list <- find_extremum_df(data)
+  
+  for (col in names(extremum_list)) {
+    
+    mini <- extremum_list[[col]]$mini
+    maxi <- extremum_list[[col]]$maxi
+    
+    x <- data[[col]]
+    
+    # Remplacement par les bornes min/max acceptables (winsorisation)
+    x[x > maxi] <- maxi
+    x[x < mini] <- mini
+    
+    data_clean[[col]] <- x
+  }
+  
+  return(data_clean)
+}
+
+data_clean <- remove_extremum_df(data_appariement)
+count_extremum_df(data_clean)
+```
+
+On obtiens ainsi *data_clean*, le nouveau tableau avec les données "nettoyer", c'est-à-dire que nous avons *traitées les valeurs aberrantes par "winsorisation". Les observations inférieures à la borne basse (Q1 − 1,5×IQR) ont été remplacées par cette borne, et celles supérieures à la borne haute (Q3 + 1,5×IQR) ont été remplacées par la borne correspondante. Cette approche permet de limiter l'influence des valeurs extrêmes tout en conservant l'ensemble des données. Pour prendre cette décision, nous avons d'abord testé le remplacement des valeurs aberrantes par la moyenne, puis par la médiane. Cependant, avec ces deux méthodes, certaines valeurs aberrantes subsistaient encore dans le dataset.*
+
+Nettoyage de l'environnement :
+
+```{r}
+rm(list = c("count_extremum_df", "find_extremum", "find_extremum_df", "remove_extremum_df", "liste_anomalies", "tableau_anomalies", "cols_a_tester", "list_name", "identifier_anomalies_details"))
+```
+
+#### Illustration complementaire
+
+##### Boxplots Avant / Après pour le Top 10 des variables
+
+On récupère automatiquement le nom des 10 variables avec le plus d'anomalies et on prépare un tableau vide pour stocker les données du graphique
+
+```{r}
+top_10_noms <- tableau_anomalies %>%
+  count(Variable, sort = TRUE) %>%
+  head(10) %>%
+  pull(Variable)
+
+df_boxplot_top10 <- data.frame()
+```
+
+On fait une boucle pour calculer l'"Avant/Après" de ces 10 variables et on ajoute au tableau global
+
+```{r}
+for (var in top_10_noms) {
+  valeurs_avant <- data_appariement[[var]]
+  valeurs_apres <- data_clean[[var]]
+  
+  df_temp <- data.frame(
+    Variable = var,
+    Statut = rep(c("1. Avant (Brut)", "2. Après (Winsorisé)"), each = nrow(data_appariement)),
+    Valeurs = c(valeurs_avant, valeurs_apres)
+  )
+  
+  df_boxplot_top10 <- rbind(df_boxplot_top10, df_temp)
+}
+```
+
+Création du graphique en mosaïque (facet_wrap)
+
+```{r}
+plot_boxplot_top10 <- ggplot(df_boxplot_top10, aes(x = Statut, y = Valeurs, fill = Statut)) +
+  geom_boxplot(outlier.colour = "#B81840FF", outlier.shape = 16, outlier.size = 1.5, alpha = 0.8) +
+  facet_wrap(~ Variable, scales = "free_y", ncol = 5) + 
+  theme_minimal() +
+  labs(title = "Effet de la winsorisation sur le Top 10 des variables avec le plus de valeurs extrêmes",
+       x = "",
+       y = "Valeurs mesurées (échelles indépendantes)") +
+  scale_fill_manual(values = c("1. Avant (Brut)" = "#76669BFF", "2. Après (Winsorisé)" = "#F2994EFF")) +
+  theme(legend.position = "bottom",
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.text = element_text(face = "bold", size = 10)) # Met en gras le nom de la variable
+
+# Affichage du graphique
+print(plot_boxplot_top10)
+```
+
+### Q2.3 Proposez des tableaux et graphiques pour synthétiser ces données descriptives. N’oubliez pas de bien expliquer et justifier les choix que vous faites.
+
+#### Tableau descriptif :
+
+```{r}
+# Création du tableau de synthèse
+tableau_descriptif <- data_clean %>%
+  group_by(Sujets) %>%
+  summarise(
+    Effectif = n(),
+    Age_Moyen = mean(Age, na.rm = TRUE),
+    Age_SD = sd(Age, na.rm = TRUE),
+    Taille_Moyenne = mean(Taille, na.rm = TRUE),
+    Taille_SD = sd(Taille, na.rm = TRUE),
+    Poids_Moyenne = mean(Poids, na.rm = TRUE),
+    Poids_SD = sd(Poids, na.rm = TRUE)
+  )
+```
+
+#### Le nuage de point
+
+```{r}
+plot_appariement <- ggplot(data_clean, aes(x = Taille, y = Poids, color = Sujets)) +
+  geom_point(size = 3, alpha = 0.7) +
+  theme_minimal() +
+  labs(
+    title = "Validation visuelle de l'appariement Taille/Masse",
+    x = "Taille (cm)",
+    y = "Masse (kg)"
+  ) +
+  scale_color_manual(values = c("TD" = "#76669BFF", "TSA" = "#F2994EFF"))
+
+print(plot_appariement)
+```
+
+#### Le diagramme en barre (Barplot):
+
+Conversion de la variable Sexe en catégorie (facteur) pour le graphique
+
+```{r}
+df_sexe <- data_clean %>%
+  mutate(Sexe_Label = ifelse(Sexe == 1, "Sexe 1", "Sexe 2")) 
+
+plot_sexe <- ggplot(df_sexe, aes(x = Sujets, fill = Sexe_Label)) +
+  geom_bar(position = "dodge", alpha = 0.8) +
+  theme_minimal() +
+  labs(
+    title = "Répartition des sexes par groupe",
+    x = "Groupe",
+    y = "Nombre d'enfants",
+    fill = "Sexe"
+  )
+
+print(plot_sexe)
+```
+
+#### Les Courbes de Densité (Density plots)
+
+```{r}
+plot_densite <- ggplot(data_clean, aes(x = Aire_YO, fill = Sujets)) +
+  geom_density(alpha = 0.5) +
+  theme_minimal() +
+  labs(
+    title = "Distribution de l'Aire d'oscillation (Yeux Ouverts)",
+    x = "Aire (mm²)",
+    y = "Densité de probabilité"
+  ) +
+  scale_fill_manual(values = c("TD" = "#76669BFF", "TSA" = "#F2994EFF"))
+
+print(plot_densite)
+```
+
+#### Les boxplots :
+
+Pour éviter la redondance dans notre code et limiter les erreurs, nous avons développé une fonction automatisée sous R. Cette fonction réalise trois opérations clés : 
+
+-   **Filtrage et restructuration :** Elle isole toutes les variables d'une même famille (ex: préfixe Aire\_) et transforme les données en format long pour les adapter à la visualisation. 
+-   **Nettoyage et ordonnancement :** Elle supprime les préfixes pour alléger la lecture et force un affichage logique respectant la difficulté croissante des conditions expérimentales : Yeux Ouverts (YO), Yeux Fermés (YF), puis Mousse (MO).
+-   **Génération graphique :** Elle crée une figure composée de trois boîtes à moustaches (boxplots) juxtaposées, permettant d'observer simultanément l'effet du groupe (TD vs TSA) et l'effet de la condition sensorielle. 
+
+La voila :
+
+```{r}
+generer_boxplots_famille <- function(data, prefixe_variable, unite_y, titre_graphique) {
+  
+  # Transformation des données (format long) en ciblant le préfixe
+  df_filtre <- data %>%
+    select(Sujets, starts_with(prefixe_variable)) %>% 
+    pivot_longer(cols = -Sujets, names_to = "Condition", values_to = "Valeur")
+  
+  # Nettoyage et forçage de l'ordre
+  df_filtre <- df_filtre %>%
+    mutate(Condition = sub(prefixe_variable, "", Condition)) %>%
+    mutate(Condition = factor(Condition, levels = c("YO", "YF", "MO")))
+  
+  # Création du graphique
+  graphique <- ggplot(df_filtre, aes(x = Sujets, y = Valeur, fill = Sujets)) +
+    geom_boxplot(alpha = 0.7, outlier.colour = "#B81840FF", outlier.shape = 8) +
+    facet_wrap(~ Condition, scales = "free_y") + 
+    theme_minimal() +
+    labs(
+      title = titre_graphique,
+      x = "Groupe d'enfants",
+      y = unite_y
+    ) +
+    scale_fill_manual(values = c("TD" = "#76669BFF", "TSA" = "#F2994EFF")) +
+    theme(
+      legend.position = "none",
+      strip.text = element_text(size = 10, face = "bold")
+    )
+  
+  return(graphique)
+}
+```
+
+Utilisons maintenant cette fonction sur nos variables :
+
+```{r}
+df <- data_clean
+
+# Pour la famille des AIRES ("Aire_YO", "Aire_YF", "Aire_MO")
+plot_aires <- generer_boxplots_famille(
+  data = df, 
+  prefixe_variable = "Aire_", 
+  unite_y = "Aire (mm²)", 
+  titre_graphique = "Comparaison de l'Aire d'oscillation (TD vs TSA)"
+)
+print(plot_aires)
+
+# Pour la famille des VITESSES ("Vm_YO", "Vm_YF", "Vm_MO")
+plot_vitesses <- generer_boxplots_famille(
+  data = df, 
+  prefixe_variable = "Vm_", 
+  unite_y = "Vitesse", 
+  titre_graphique = "Comparaison de la Vitesse Moyenne (TD vs TSA)"
+)
+print(plot_vitesses)
+
+# Pour la famille des AMPLITUDES AP ("APRoM_YO", "APRoM_YF", "APRoM_MO")
+plot_aprom <- generer_boxplots_famille(
+  data = df, 
+  prefixe_variable = "APRoM_", 
+  unite_y = "Amplitude AP (mm)", 
+  titre_graphique = "Comparaison de l'Amplitude Postéro-Antérieure (TD vs TSA)"
+)
+print(plot_aprom)
+
+#----------------------
+
+# Amplitude Médio-Latérale (MLRoM)
+plot_mlrom <- generer_boxplots_famille(df, "MLRoM_", "Amplitude ML (mm)", "Amplitude Médio-Latérale (TD vs TSA)")
+print(plot_mlrom)
+
+# Excursion du Centre de Pression (CoPexc)
+plot_copexc <- generer_boxplots_famille(df, "CoPexc_", "Excursion CoP", "Excursion du Centre de Pression (TD vs TSA)")
+print(plot_copexc)
+
+# Ratio d'excursion (Ratio_exc)
+plot_ratio_exc <- generer_boxplots_famille(df, "Ratio_exc_", "Ratio", "Ratio d'Excursion (TD vs TSA)")
+print(plot_ratio_exc)
+
+# Angle theta (theta)
+plot_theta <- generer_boxplots_famille(df, "theta_", "Angle (°)", "Angle Theta d'oscillation (TD vs TSA)")
+print(plot_theta)
+
+#----------------------
+
+# Fréquence Médiane Antéro-Postérieure
+plot_fmed_ap <- generer_boxplots_famille(df, "Fmed_ap_", "Fréquence (Hz)", "Fréquence Médiane Antéro-Postérieure (TD vs TSA)")
+print(plot_fmed_ap)
+
+# Fréquence Médiane Médio-Latérale
+plot_fmed_ml <- generer_boxplots_famille(df, "Fmed_ml_", "Fréquence (Hz)", "Fréquence Médiane Médio-Latérale (TD vs TSA)")
+print(plot_fmed_ml)
+
+#-----------------------
+
+# RMS Antéro-Postérieur
+plot_rms_ap <- generer_boxplots_famille(df, "RMS_ap_", "RMS AP", "Dispersion RMS Antéro-Postérieure (TD vs TSA)")
+print(plot_rms_ap)
+
+# RMS Médio-Latéral
+plot_rms_ml <- generer_boxplots_famille(df, "RMS_ml_", "RMS ML", "Dispersion RMS Médio-Latérale (TD vs TSA)")
+print(plot_rms_ml)
+
+# RMSr Antéro-Postérieur (Composante Rambling/Résiduelle AP)
+plot_rmsr_ap <- generer_boxplots_famille(
+  data = df, 
+  prefixe_variable = "RMSr_ap_", 
+  unite_y = "RMSr AP", 
+  titre_graphique = "Dispersion RMSr Antéro-Postérieure (TD vs TSA)"
+)
+print(plot_rmsr_ap)
+
+# RMSr Médio-Latéral (Composante Rambling/Résiduelle ML)
+plot_rmsr_ml <- generer_boxplots_famille(
+  data = df, 
+  prefixe_variable = "RMSr_ml_", 
+  unite_y = "RMSr ML", 
+  titre_graphique = "Dispersion RMSr Médio-Latérale (TD vs TSA)"
+)
+print(plot_rmsr_ml)
+
+# RMSt Antéro-Postérieur (Composante Trembling AP)
+plot_rmst_ap <- generer_boxplots_famille(
+  data = df, 
+  prefixe_variable = "RMSt_ap_", 
+  unite_y = "RMSt AP", 
+  titre_graphique = "Dispersion RMSt Antéro-Postérieure (TD vs TSA)"
+)
+print(plot_rmst_ap)
+
+# RMSt Médio-Latéral (Composante Trembling ML)
+plot_rmst_ml <- generer_boxplots_famille(
+  data = df, 
+  prefixe_variable = "RMSt_ml_", 
+  unite_y = "RMSt ML", 
+  titre_graphique = "Dispersion RMSt Médio-Latérale (TD vs TSA)"
+)
+print(plot_rmst_ml)
+
+#-------------------------
+
+# Sample Entropy (Sen)
+plot_sen_ap <- generer_boxplots_famille(df, "Sen_ap_", "Entropie", "Sample Entropy Antéro-Postérieure (TD vs TSA)")
+print(plot_sen_ap)
+
+plot_sen_ml <- generer_boxplots_famille(df, "Sen_ml_", "Entropie", "Sample Entropy Médio-Latérale (TD vs TSA)")
+print(plot_sen_ml)
+
+#-----------------------
+
+# DFA (Detrended Fluctuation Analysis)
+plot_dfa_ap <- generer_boxplots_famille(df, "DFA_ap_", "Index DFA", "Index DFA Antéro-Postérieur (TD vs TSA)")
+print(plot_dfa_ap)
+
+plot_dfa_ml <- generer_boxplots_famille(df, "DFA_ml_", "Index DFA", "Index DFA Médio-Latéral (TD vs TSA)")
+print(plot_dfa_ml)
+
+#-----------------------
+
+# Déterminisme (DET)
+plot_det_ap <- generer_boxplots_famille(df, "DET_ap_", "Déterminisme (%)", "Déterminisme Antéro-Postérieur (TD vs TSA)")
+print(plot_det_ap)
+
+plot_det_ml <- generer_boxplots_famille(df, "DET_ml_", "Déterminisme (%)", "Déterminisme Médio-Latéral (TD vs TSA)")
+print(plot_det_ml)
+
+#----------------------
+
+# Laminarité (LAM)
+plot_lam_ap <- generer_boxplots_famille(df, "LAM_ap_", "Laminarité (%)", "Laminarité Antéro-Postérieure (TD vs TSA)")
+print(plot_lam_ap)
+
+plot_lam_ml <- generer_boxplots_famille(df, "LAM_ml_", "Laminarité (%)", "Laminarité Médio-Latérale (TD vs TSA)")
+print(plot_lam_ml)
+
+#---------------------
+
+# Longueur moyenne des lignes (MeanL)
+plot_meanl_ap <- generer_boxplots_famille(df, "MeanL_ap_", "MeanL", "Longueur Moy. Lignes Antéro-Postérieure (TD vs TSA)")
+print(plot_meanl_ap)
+
+plot_meanl_ml <- generer_boxplots_famille(df, "MeanL_ml_", "MeanL", "Longueur Moy. Lignes Médio-Latérale (TD vs TSA)")
+print(plot_meanl_ml)
+
+#---------------------
+
+# Longueur max des lignes (MaxL)
+plot_maxl_ap <- generer_boxplots_famille(df, "MaxL_ap_", "MaxL", "Longueur Max. Lignes Antéro-Postérieure (TD vs TSA)")
+print(plot_maxl_ap)
+
+plot_maxl_ml <- generer_boxplots_famille(df, "MaxL_ml_", "MaxL", "Longueur Max. Lignes Médio-Latérale (TD vs TSA)")
+print(plot_maxl_ml)
+```
+
+Nettoyage de l'environnement :
+
+```{r}
+rm(list = c("df", "df_long", "df_sexe", "tableau_descriptif", "plot_aires", "plot_appariement", "plot_aprom", "plot_copexc", "plot_densite", "plot_det_ap", "plot_det_ml", "plot_dfa_ap", "plot_dfa_ml", "plot_fmed_ap", "plot_fmed_ml", "plot_lam_ap", "plot_lam_ml", "plot_maxl_ap", "plot_maxl_ml", "plot_meanl_ap", "plot_meanl_ml", "plot_mlrom", "plot_ratio_exc", "plot_rms_ap", "plot_rms_ml", "plot_rmsr_ap", "plot_rmsr_ml", "plot_rmst_ap", "plot_rmst_ml", "plot_sen_ap", "plot_sen_ml", "plot_sexe", "plot_theta", "plot_toutes_variables", "plot_vitesses", "generer_boxplots_famille"))
+```
+
+```{r}
+library(dplyr)
+library(ggcorrplot)
+
+# 1. Préparation des données : On isole le groupe TSA et on sélectionne les variables clés
+
+df_matrice <- data_clean %>%
+  filter(Sujets == "TSA") %>%
+  select(
+    # Variables posturales
+    Aire_MO,Aire_YF, Aire_YO, Vm_YO, APRoM_MO, MLRoM_YF, MLRoM_YO,
+    # Scores cliniques
+    MOT, RRB, `ADOS_Score CRR`, `ADOS_Score total`
+  )
+
+# 2. Calcul de la matrice de corrélation de Spearman et des p-values
+matrice_cor <- cor(df_matrice, method = "spearman", use = "pairwise.complete.obs")
+matrice_p_values <- cor_pmat(df_matrice, method = "spearman")
+
+# 3. Création du graphique (Le fameux Corrélogramme)
+plot_matrice <- ggcorrplot(
+  matrice_cor, 
+  method = "circle",       
+  type = "lower",          
+  p.mat = matrice_p_values,
+  sig.level = 0.05,       
+  insig = "blank",         
+  lab = TRUE,              
+  colors = c("#F2994EFF", "white", "#B81840FF"), # Couleurs : Bleu (négatif) -> Blanc -> Rouge (positif)
+  title = "Matrice des corrélations de Spearman (Groupe TSA)"
+)
+
+print(plot_matrice)
+```
+
+```{r}
+# 1. Isoler uniquement les enfants TSA
+df_tsa <- data_clean %>% filter(Sujets == "TSA")
+
+# 2. Test de corrélation de Spearman (Exemple : Aire sur mousse vs Motricité)
+cor_aire_mot <- cor.test(df_tsa$`ADOS_Score total`, df_tsa$"ADOS_Score CRR", method = "spearman")
+print("Corrélation Aire_MO vs MOT :")
+print(cor_aire_mot)
+
+# 3. Test de corrélation 
+# Attention à bien mettre les vrais noms de vos colonnes ADOS
+cor_vm_crr <- cor.test(df_tsa$`ADOS_Score total`, df_tsa$`ADOS_Score CRR`, method = "spearman")
+print("Corrélation Vm_MO vs Score CRR :")
+print(cor_vm_crr)
+
+# 4. Générer un graphique de corrélation pour illustrer le rapport
+plot_cor_mot <- ggplot(df_tsa, aes(x = MOT, y = Aire_MO)) +
+  geom_point(color = "#F2994EFF", size = 3, alpha = 0.8) +
+  geom_smooth(method = "lm", color = "black", linetype = "dashed", se = FALSE) + 
+  theme_minimal() +
+  labs(
+    title = "Relation entre le score clinique de Motricité (MOT) et l'instabilité (Aire_MO)",
+    subtitle = "Groupe TSA uniquement",
+    x = "Score d'évaluation (MOT)",
+    y = "Aire d'oscillation sur mousse (mm²)"
+  )
+
+print(plot_cor_mot)
+```
