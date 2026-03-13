@@ -822,7 +822,7 @@ Nettoyage de l'environnement :
 rm(list = c("df", "df_long", "df_sexe", "tableau_descriptif", "plot_aires", "plot_appariement", "plot_aprom", "plot_copexc", "plot_densite", "plot_det_ap", "plot_det_ml", "plot_dfa_ap", "plot_dfa_ml", "plot_fmed_ap", "plot_fmed_ml", "plot_lam_ap", "plot_lam_ml", "plot_maxl_ap", "plot_maxl_ml", "plot_meanl_ap", "plot_meanl_ml", "plot_mlrom", "plot_ratio_exc", "plot_rms_ap", "plot_rms_ml", "plot_rmsr_ap", "plot_rmsr_ml", "plot_rmst_ap", "plot_rmst_ml", "plot_sen_ap", "plot_sen_ml", "plot_sexe", "plot_theta", "plot_toutes_variables", "plot_vitesses", "generer_boxplots_famille"))
 ```
 
-## **Q3.1 Quel test proposez-vous pour comparer les deux groupes d’enfants ?** 
+## **Q3.1 Quel test proposez-vous pour comparer les deux groupes d’enfants ?**
 
 ## **Vérifiez bien que vous pouvez appliquer ce test à vos données. Appliquez le test à vos données et présentez les résultats (tableaux et graphiques).**
 
@@ -867,7 +867,7 @@ resultats_tests <- data_clean %>%
   do(choix_test_stats(.$Valeur, .$Sujets))
 ```
 
-## **Q3.2 Nous souhaiterions savoir si certains troubles de l’anticipation sont en lien avec les scores d’évaluation du TSA (SRS et ADOS).** 
+## **Q3.2 Nous souhaiterions savoir si certains troubles de l’anticipation sont en lien avec les scores d’évaluation du TSA (SRS et ADOS).**
 
 ### Matrice de corrélation réduite (heatmap)
 
@@ -963,4 +963,76 @@ plot_PRoMMO_crr <- ggplot(df_tsa, aes(x = `ADOS_Score CRR`, y = APRoM_MO)) +
   )
 
 grid.arrange(plot_APRoMMO_mot, plot_PRoMMO_crr, ncol = 2)
+```
+
+```{r}
+library(dplyr)
+library(NbClust)
+```
+
+Repartition et standartisation des données
+
+On sélectionne uniquement les variables quantitatives posturales (sans les scores ADOS/SRS), et on enlève la colonne "Sujets" (TD/TSA) pour que l'algorithme soit "aveugle" au diagnostic. On passe ensuite a une étape cruciale : centrer et réduire (Standardisation)
+
+```{r}
+df_cluster <- data_clean %>%
+  select(Sujets, Aire_MO,Aire_YF, Aire_YO, Vm_YO, APRoM_MO, MLRoM_YF, MLRoM_YO) %>% 
+  na.omit() 
+
+donnees_numeriques <- df_cluster %>% select(-Sujets)
+
+donnees_scale <- scale(donnees_numeriques)
+```
+
+Déterminons maintenant le nombre optimal de clusters (On cherche entre 2 et 5 groupes max):
+
+```{r}
+res_nbclust <- NbClust(data = donnees_scale, 
+                       distance = "euclidean", 
+                       min.nc = 2, max.nc = 5,
+                       method = "kmeans")
+```
+
+Dans notre console, on obtiens le message suivant :
+
+"According to the majority rule, the best number of clusters is 2"
+
+On choisi donc 2 clusters.
+
+```{r}
+meilleur_k <- 2
+```
+
+Algorithme des K_means
+
+On vas ici figer l'aléatoire pour avoir toujours le même résultat si on relance le code
+
+```{r}
+set.seed(123)
+res_kmeans <- kmeans(donnees_scale, centers = meilleur_k, nstart = 25)
+
+df_cluster$Cluster <- as.factor(res_kmeans$cluster)
+```
+
+Visualisation des clusters
+
+```{r}
+plot_clusters <- ggplot(df_cluster, aes(x = Aire_MO, y = APRoM_MO, color = Cluster, shape = Sujets)) +
+  geom_point(size = 4, alpha = 0.8) +
+  theme_minimal() +
+  labs(
+    title = "Profils posturaux identifiés par Clustering",
+    subtitle = "Basé sur les variables significatives de la Q3.1",
+    x = "Aire d'oscillation sur mousse (mm²)",
+    y = "Amplitude AP sur mousse (mm)",
+    color = "Cluster (Profil)",
+    shape = "Groupe réel"
+  ) +
+  scale_color_manual(values = c("1" = "#76669BFF", "2" = "#F2994EFF"))
+
+print(plot_clusters)
+```
+
+```{r}
+table(df_cluster$Sujets, df_cluster$Cluster)
 ```
