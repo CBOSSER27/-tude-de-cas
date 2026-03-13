@@ -866,3 +866,101 @@ resultats_tests <- data_clean %>%
   group_by(Variable) %>%
   do(choix_test_stats(.$Valeur, .$Sujets))
 ```
+
+## **Q3.2 Nous souhaiterions savoir si certains troubles de l’anticipation sont en lien avec les scores d’évaluation du TSA (SRS et ADOS).** 
+
+### Matrice de corrélation réduite (heatmap)
+
+```{r}
+library(dplyr)
+library(ggcorrplot)
+
+# 1. Préparation des données : On isole le groupe TSA et on sélectionne les variables clés
+
+df_matrice <- data_clean %>%
+  filter(Sujets == "TSA") %>%
+  select(
+    # Variables posturales
+    Aire_MO,Aire_YF, Aire_YO, Vm_YO, APRoM_MO, MLRoM_YF, MLRoM_YO,
+    # Scores cliniques
+    MOT, RRB, `ADOS_Score CRR`, `ADOS_Score total`
+  )
+
+# 2. Calcul de la matrice de corrélation de Spearman et des p-values
+matrice_cor <- cor(df_matrice, method = "spearman", use = "pairwise.complete.obs")
+matrice_p_values <- cor_pmat(df_matrice, method = "spearman")
+
+# 3. Création du graphique (Le fameux Corrélogramme)
+plot_matrice <- ggcorrplot(
+  matrice_cor, 
+  method = "circle",       
+  type = "lower",          
+  p.mat = matrice_p_values,
+  sig.level = 0.05,       
+  insig = "blank",         
+  lab = TRUE,              
+  colors = c("#F2994EFF", "white", "#B81840FF"), # Couleurs : Bleu (négatif) -> Blanc -> Rouge (positif)
+  title = "Matrice des corrélations de Spearman (Groupe TSA)"
+)
+
+print(plot_matrice)
+```
+
+### **Scatterplots** (nuages de points)
+
+```{r}
+# 1. Isoler uniquement les enfants TSA
+df_tsa <- data_clean %>% filter(Sujets == "TSA")
+
+# 2. Test de corrélation de Spearman (Correction du print)
+cor_APRoMMO_mot <- cor.test(df_tsa$`MOT`, df_tsa$`APRoM_MO`, method = "spearman")
+print("Corrélation APRoM_MO vs MOT :")
+print(cor_APRoMMO_mot) 
+
+# 3. Test de corrélation (Correction de l'espace et du print)
+cor_APRoMMO_crr <- cor.test(df_tsa$`ADOS_Score CRR`, df_tsa$`APRoM_MO`, method = "spearman")
+print("Corrélation APRoM_MO vs ADOS_Score CRR :")
+print(cor_APRoMMO_crr) 
+
+```
+
+```{r}
+library(gridExtra)
+
+# 1. Graphique MOT
+plot_APRoMMO_mot <- ggplot(df_tsa, aes(x = MOT, y = APRoM_MO)) +
+  geom_point(aes(color = "Groupe TSA"), size = 3, alpha = 0.8) +
+  # On "mappe" le linetype pour créer l'entrée en légende
+  geom_smooth(aes(linetype = "Ligne de tendance"), method = "lm", color = "black", se = FALSE) + 
+  scale_color_manual(values = c("Groupe TSA" = "#F2994EFF")) +
+  scale_linetype_manual(values = c("Ligne de tendance" = "dashed")) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  labs(
+    title = "Relation MOT / APRoM_MO",
+    subtitle = "Groupe TSA uniquement",
+    x = "Score d'évaluation (MOT)",
+    y = "Mouvement antéro-postérieur",
+    color = "",
+    linetype = ""
+  )
+
+# 2. Graphique ADOS
+plot_PRoMMO_crr <- ggplot(df_tsa, aes(x = `ADOS_Score CRR`, y = APRoM_MO)) +
+  geom_point(aes(color = "Groupe TSA"), size = 3, alpha = 0.8) +
+  geom_smooth(aes(linetype = "Ligne de tendance"), method = "lm", color = "black", se = FALSE) + 
+  scale_color_manual(values = c("Groupe TSA" = "#F2994EFF")) +
+  scale_linetype_manual(values = c("Ligne de tendance" = "dashed")) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  labs(
+    title = "Relation ADOS CRR / APRoM_MO",
+    subtitle = "Groupe TSA uniquement",
+    x = "ADOS_Score CRR",
+    y = "Mouvement antéro-postérieur",
+    color = "",
+    linetype = ""
+  )
+
+grid.arrange(plot_APRoMMO_mot, plot_PRoMMO_crr, ncol = 2)
+```
