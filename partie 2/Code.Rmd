@@ -16,6 +16,7 @@ library(ggplot2)
 library(readxl)
 library(dplyr)
 library(patchwork)
+library(ggrepel)
 ```
 
 ```{r}
@@ -596,6 +597,48 @@ plot_sexe <- ggplot(df_sexe, aes(x = Sujets, fill = Sexe_Label)) +
 print(plot_sexe)
 ```
 
+##### Anova Groupe + Sexe
+
+Préparation de la variable Sexe en tant que facteur
+
+```{r}
+df_genre <- data_clean %>%
+  mutate(Sexe_Label = as.factor(ifelse(Sexe == 1, "Sexe 1", "Sexe 2")))
+```
+
+Modèle d'ANOVA à 2 facteurs (L'Aire n'étant pas distribuée normalement, on applique une transformation log() pour respecter les conditions d'application de l'ANOVA.)
+
+```{r}
+modele_anova <- aov(log(Aire_MO) ~ Sujets + Sexe_Label, data = df_genre)
+```
+
+Affichage des résultats du test
+
+```{r}
+print("--- Résultats de l'ANOVA à 2 facteurs (Groupe + Sexe) sur le log(Aire_MO) ---")
+summary(modele_anova)
+```
+
+Illustration graphique du croisement Sexe / Groupe
+
+```{r}
+plot_biais_genre <- ggplot(df_genre, aes(x = Sujets, y = Aire_MO, fill = Sexe_Label)) +
+  geom_boxplot(alpha = 0.8, outlier.colour = "black", outlier.shape = 8) +
+  theme_minimal() +
+  labs(
+    title = "Impact du Sexe et du Groupe sur l'Aire d'oscillation (Mousse)",
+    subtitle = "Vérification visuelle du potentiel biais de genre",
+    x = "Groupe",
+    y = "Aire d'oscillation sur mousse (mm²)",
+    fill = "Sexe"
+  ) +
+  # Choix de couleurs complémentaires pour bien les distinguer des couleurs des groupes
+  scale_fill_manual(values = c("Sexe 1" = "#76669BFF", "Sexe 2" = "#F2994EFF")) +
+  theme(plot.title = element_text(face = "bold"))
+
+print(plot_biais_genre)
+```
+
 #### Les Courbes de Densité (Density plots)
 
 ```{r}
@@ -826,12 +869,13 @@ rm(list = c("df", "df_long", "df_sexe", "tableau_descriptif", "plot_aires", "plo
 
 ## **Vérifiez bien que vous pouvez appliquer ce test à vos données. Appliquez le test à vos données et présentez les résultats (tableaux et graphiques).**
 
+#### Tableau test
+
 Fonction qui choisit le bon test automatiquement :
 
 Dans la partie "choix et application du test", on procède ainsi : si les deux groupes suivent une loi normale (selon le test de Shapiro-Wilk), alors on peut utiliser un test de Student. Sinon, on utilise le test de Mann-Whitney.
 
 ```{r}
-
 choix_test_stats <- function(valeur, groupe) {
   g1 <- valeur[groupe == "TD"]
   g2 <- valeur[groupe == "TSA"]
@@ -865,6 +909,192 @@ resultats_tests <- data_clean %>%
   pivot_longer(cols = -Sujets, names_to = "Variable", values_to = "Valeur") %>%
   group_by(Variable) %>%
   do(choix_test_stats(.$Valeur, .$Sujets))
+```
+
+#### Volcano plot
+
+Création d'une fonction qui calcule à la fois la P-Value et le d de Cohen
+
+```{r}
+Cohen
+calcul_volcano <- function(valeur, groupe) {
+  # Rassembler les données et supprimer les NA pour éviter les crashs
+  df_temp <- data.frame(val = valeur, grp = groupe) %>% 
+    na.omit()
+  
+  g_td <- df_temp$val[df_temp$grp == "TD"]
+  g_tsa <- df_temp$val[df_temp$grp == "TSA"]
+  
+  # SECURITÉ : S'il y a moins de 3 valeurs dans un des groupes (ex: scores ADOS), on passe
+  if (length(g_td) < 3 | length(g_tsa) < 3) {
+    return(data.frame(P_Value = NA, Cohen_D = NA))
+  }
+  
+  # Calcul de la p-value
+  norm_td <- shapiro.test(g_td)$p.value > 0.05
+  norm_tsa <- shapiro.test(g_tsa)$p.value > 0.05
+  
+  if (norm_td & norm_tsa) {         
+    p_val <- t.test(g_tsa, g_td, var.equal = TRUE)$p.value
+  } else {                        
+    p_val <- wilcox.test(g_tsa, g_td)$p.value
+  }
+  
+  # Calcul du d de Cohen (taille de l'effet)
+  m_td <- mean(g_td)
+  m_tsa <- mean(g_tsa)
+  sd_td <- sd(g_td)
+  sd_tsa <- sd(g_tsa)
+  n_td <- length(g_td)
+  n_tsa <- length(g_tsa)
+  
+  # Formule de l'écart-type poolé
+  sd_pool <- sqrt( ((n_td - 1)*sd_td^2 + (n_tsa - 1)*sd_tsa^2) / (n_td + n_tsa - 2) )
+  d_cohen <- (m_tsa - m_td) / sd_pool
+  
+  return(data.frame(P_Value = p_val, Cohen_D = d_cohen))
+}
+```
+
+Application sur TOUTES les variables posturales (On exclut les variables cliniques et descriptives pour ne garder que la posture)
+
+```{r}
+vars_a_exclure <- c("Age", "Taille", "Poids", "Sexe", "Sexe_Label", 
+                    "AWR", "COG", "COM", "MOT", "RRB", "SCI", "TOT", 
+                    "ADOS_Communication", "ADOS_Interaction", 
+                    "ADOS_Score CRR", "ADOS_Score total", "Cluster")
+
+df_volcano <- data_clean %>%
+  select(Sujets, where(is.numeric)) %>%
+  select(-any_of(vars_a_exclure)) %>%
+  pivot_longer(cols = -Sujets, names_to = "Variable", values_to = "Valeur") %>%
+  group_by(Variable) %>%
+  do(calcul_volcano(.$Valeur, .$Sujets)) %>%
+  ungroup() %>%
+  filter(!is.na(P_Value))
+```
+
+Préparation des données pour le Volcano Plot (-log10 de la p-value)
+
+```{r}
+df_volcano <- df_volcano %>%
+  mutate(
+    logP = -log10(P_Value),
+    Significatif = ifelse(P_Value < 0.05, "Significatif (p < 0.05)", "Non Significatif")
+  )
+```
+
+Tracé du Volcano Plot
+
+```{r}
+plot_volcano <- ggplot(df_volcano, aes(x = Cohen_D, y = logP, color = Significatif)) +
+  geom_point(alpha = 0.8, size = 3) +
+  # Ligne horizontale de significativité (-log10(0.05) ≈ 1.30)
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "red", size = 0.8) +
+  # Ligne verticale de l'effet nul
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black", alpha = 0.5) +
+  # Ajout des étiquettes UNIQUEMENT pour les variables significatives pour ne pas surcharger
+  geom_text_repel(data = filter(df_volcano, P_Value < 0.05), 
+                  aes(label = Variable), 
+                  size = 3.5, max.overlaps = 20, show.legend = FALSE, fontface = "bold") +
+  scale_color_manual(values = c("Non Significatif" = "grey70", "Significatif (p < 0.05)" = "#B81840FF")) +
+  theme_minimal() +
+  labs(
+    title = "Volcano Plot : Synthèse globale de la signature posturale TSA",
+    subtitle = "Croisement entre la taille de l'effet (d de Cohen) et la significativité statistique",
+    x = "Taille de l'effet (d de Cohen) \n <-- Valeurs plus basses chez TSA | Valeurs plus hautes chez TSA -->",
+    y = "-log10(p-value) \n (Plus le point est haut, plus la différence est sûre)"
+  ) +
+  theme(legend.position = "bottom", 
+        plot.title = element_text(face = "bold", size = 14))
+
+print(plot_volcano)
+```
+
+```{r}
+library(ggrepel)
+
+# 1. Fonction sécurisée pour calculer P-Value et d de Cohen
+calcul_volcano <- function(valeur, groupe) {
+  # Rassembler les données et supprimer les NA pour éviter les crashs
+  df_temp <- data.frame(val = valeur, grp = groupe) %>% na.omit()
+  
+  g_td <- df_temp$val[df_temp$grp == "TD"]
+  g_tsa <- df_temp$val[df_temp$grp == "TSA"]
+  
+  # SECURITÉ : S'il y a moins de 3 valeurs dans un des groupes (ex: scores ADOS), on passe
+  if (length(g_td) < 3 | length(g_tsa) < 3) {
+    return(data.frame(P_Value = NA, Cohen_D = NA))
+  }
+  
+  # Calcul de la p-value
+  norm_td <- shapiro.test(g_td)$p.value > 0.05
+  norm_tsa <- shapiro.test(g_tsa)$p.value > 0.05
+  
+  if (norm_td & norm_tsa) {         
+    p_val <- t.test(g_tsa, g_td, var.equal = TRUE)$p.value
+  } else {                        
+    p_val <- wilcox.test(g_tsa, g_td)$p.value
+  }
+  
+  # Calcul du d de Cohen (taille de l'effet)
+  m_td <- mean(g_td)
+  m_tsa <- mean(g_tsa)
+  sd_td <- sd(g_td)
+  sd_tsa <- sd(g_tsa)
+  n_td <- length(g_td)
+  n_tsa <- length(g_tsa)
+  
+  # Formule de l'écart-type poolé
+  sd_pool <- sqrt( ((n_td - 1)*sd_td^2 + (n_tsa - 1)*sd_tsa^2) / (n_td + n_tsa - 2) )
+  d_cohen <- (m_tsa - m_td) / sd_pool
+  
+  return(data.frame(P_Value = p_val, Cohen_D = d_cohen))
+}
+
+# 2. Liste de toutes les variables cliniques et descriptives à exclure du Volcano Plot
+vars_a_exclure <- c("Age", "Taille", "Poids", "Sexe", "Sexe_Label", 
+                    "AWR", "COG", "COM", "MOT", "RRB", "SCI", "TOT", 
+                    "ADOS_Communication", "ADOS_Interaction", 
+                    "ADOS_Score CRR", "ADOS_Score total", "Cluster")
+
+# 3. Application sur toutes les variables posturales
+df_volcano <- data_clean %>%
+  select(Sujets, where(is.numeric)) %>%
+  select(-any_of(vars_a_exclure)) %>%
+  pivot_longer(cols = -Sujets, names_to = "Variable", values_to = "Valeur") %>%
+  group_by(Variable) %>%
+  do(calcul_volcano(.$Valeur, .$Sujets)) %>%
+  ungroup() %>%
+  filter(!is.na(P_Value)) # On retire proprement les lignes qui ont renvoyé NA
+
+# 4. Préparation des axes (logP)
+df_volcano <- df_volcano %>%
+  mutate(
+    logP = -log10(P_Value),
+    Significatif = ifelse(P_Value < 0.05, "Significatif (p < 0.05)", "Non Significatif")
+  )
+
+# 5. Création du Volcano Plot
+plot_volcano <- ggplot(df_volcano, aes(x = Cohen_D, y = logP, color = Significatif)) +
+  geom_point(alpha = 0.8, size = 3) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "red", linewidth = 0.8) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black", alpha = 0.5) +
+  geom_text_repel(data = filter(df_volcano, P_Value < 0.05), 
+                  aes(label = Variable), 
+                  size = 3.5, max.overlaps = 30, show.legend = FALSE, fontface = "bold") +
+  scale_color_manual(values = c("Non Significatif" = "grey70", "Significatif (p < 0.05)" = "#B81840FF")) +
+  theme_minimal() +
+  labs(
+    title = "Volcano Plot : Synthèse globale de la signature posturale TSA",
+    subtitle = "Croisement entre la taille de l'effet (d de Cohen) et la significativité statistique",
+    x = "Taille de l'effet (d de Cohen) \n <-- Valeurs plus basses chez TSA | Valeurs plus hautes chez TSA -->",
+    y = "-log10(p-value) \n (Plus le point est haut, plus la différence est sûre)"
+  ) +
+  theme(legend.position = "bottom", 
+        plot.title = element_text(face = "bold", size = 14))
+
+print(plot_volcano)
 ```
 
 ## **Q3.2 Nous souhaiterions savoir si certains troubles de l’anticipation sont en lien avec les scores d’évaluation du TSA (SRS et ADOS).**
