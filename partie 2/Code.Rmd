@@ -19,8 +19,6 @@ library(patchwork)
 ```
 
 ```{r}
-
-setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 DataPosturo <- read_excel("DataPosturo_P2.xlsx")
 summary(DataPosturo)
 ```
@@ -972,7 +970,9 @@ library(dplyr)
 library(NbClust)
 ```
 
-Repartition et standartisation des données
+## Q3.3 D’un point de vue statistiques, comment peut-on chercher s’il existe des groupes ou « clusters » d’enfants parmi tous les enfants de l’étude (TSA et TD) qui auraient des résultats assez similaires?
+
+### Repartition et standartisation des données
 
 On sélectionne uniquement les variables quantitatives posturales (sans les scores ADOS/SRS), et on enlève la colonne "Sujets" (TD/TSA) pour que l'algorithme soit "aveugle" au diagnostic. On passe ensuite a une étape cruciale : centrer et réduire (Standardisation)
 
@@ -1039,10 +1039,9 @@ print(plot_clusters)
 table(df_cluster$Sujets, df_cluster$Cluster)
 ```
 
-## Ouverture : 
+## Ouverture :
 
 ```{r}
-
 # Installer et charger mclust si besoin
 library(mclust)
 
