@@ -20,6 +20,7 @@ library(ggrepel)
 ```
 
 ```{r}
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 DataPosturo <- read_excel("DataPosturo_P2.xlsx")
 summary(DataPosturo)
 ```
@@ -909,6 +910,58 @@ resultats_tests <- data_clean %>%
   pivot_longer(cols = -Sujets, names_to = "Variable", values_to = "Valeur") %>%
   group_by(Variable) %>%
   do(choix_test_stats(.$Valeur, .$Sujets))
+```
+
+#### **Un graphique en radar (Spider Chart) :** 
+
+Commençons par importer la librairie dont nous allons avoir besoin (en plus de tidyverse que nous avons importé précédemment.
+
+```{r}
+library(fmsb)
+```
+
+Sélection et préparation des données
+
+```{r}
+
+# 1. On calcule le Z-score sur CHAQUE individu avant de faire la moyenne
+radar_scaled <- data_clean %>%
+  select(Sujets, starts_with("Aire"), APRoM_MO, MLRoM_YF, MLRoM_YO, Vm_MO) %>%
+  # On standardise par rapport à TOUTE la population d'un coup
+  mutate(across(-Sujets, \(x) as.numeric(scale(x)))) %>% 
+  # MAINTENANT on calcule la moyenne par groupe
+  group_by(Sujets) %>%
+  summarise(across(everything(), \(x) mean(x, na.rm = TRUE)))
+
+# 2. Standardisation (Z-score)
+# On compare chaque groupe à la moyenne de l'ensemble
+radar_scaled <- radar_prep %>%
+  mutate(across(-Sujets, \(x) as.numeric(scale(x))))
+
+# 3. Préparation pour fmsb
+df_numeric <- radar_scaled %>% select(-Sujets)
+
+# Bornes fixées à +/- 2 pour une lecture claire des écart-types (Z-score)
+# Ou garde ton calcul max/min si les écarts sont plus grands
+max_val <- max(df_numeric, na.rm = TRUE) + 0.2
+min_val <- min(df_numeric, na.rm = TRUE) - 0.2
+
+radar_final <- as.data.frame(rbind(rep(max_val, ncol(df_numeric)), 
+                                   rep(min_val, ncol(df_numeric)), 
+                                   df_numeric))
+
+# 4. Graphique
+colors_border = c("#76669BFF", "#F2994EFF") 
+colors_in = c(scales::alpha("#76669BFF", 0.3), scales::alpha("#F2994EFF", 0.3))
+
+radarchart(radar_final, 
+           pcol=colors_border, pfcol=colors_in, plwd=4, plty=1,
+           cglcol="grey80", cglty=1, axislabcol="grey50",
+           vlcex=0.8, title="Profil Postural Moyen : TD vs TSA (Z-Scores)")
+
+# 5. Légende
+legend(x="topright", legend = radar_scaled$Sujets, bty = "n", pch=20, 
+       col=colors_border, text.col = "black", cex=1, pt.cex=2)
 ```
 
 #### Volcano plot
